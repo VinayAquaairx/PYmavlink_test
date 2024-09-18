@@ -207,6 +207,17 @@ def calculate_distance_to_home():
         return R * c
     return None
 
+
+def decode_mavlink_message(msg):
+    if msg.get_type() == 'STATUSTEXT':
+        return f"AP: {msg.text}"
+    elif msg.get_type() == 'COMMAND_ACK':
+        return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
+    else:
+        return f"Received {msg.get_type()} message"
+    
+
+
 def request_data_streams():
     if connection:
         connection.mav.request_data_stream_send(
@@ -292,13 +303,13 @@ def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0,
 
 message_queue = Queue()
 
-def decode_mavlink_message(msg):
-    if msg.get_type() == 'STATUSTEXT':
-        return f"AP: {msg.text}"
-    elif msg.get_type() == 'COMMAND_ACK':
-        return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
-    else:
-        return f"Received {msg.get_type()} message"
+# def decode_mavlink_message(msg):
+#     if msg.get_type() == 'STATUSTEXT':
+#         return f"AP: {msg.text}"
+#     elif msg.get_type() == 'COMMAND_ACK':
+#         return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
+#     else:
+#         return f"Received {msg.get_type()} message"
     
 
 
@@ -337,7 +348,6 @@ def set_mode(mode):
         )
     return False
 
-
 @app.route('/command', methods=['POST'])
 def command():
     data = request.json
@@ -349,14 +359,7 @@ def command():
         success = send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 0)
     elif command == 'takeoff':
         altitude = float(data['altitude'])
-        if set_mode('GUIDED'):
-            if not drone_status['armed']:
-                arm_success = send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1)
-                if not arm_success:
-                    return jsonify({'status': 'arming_failed'}), 500
-            success = send_command_long(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, altitude)
-        else:
-            return jsonify({'status': 'failed_to_enter_guided_mode'}), 500
+        success = send_command_long(mavutil.mavlink.MAV_CMD_NAV_TAKEOFF, 0, 0, 0, 0, 0, 0, altitude)
     elif command == 'land':
         success = send_command_long(mavutil.mavlink.MAV_CMD_NAV_LAND)
     elif command == 'rtl':
@@ -369,21 +372,53 @@ def command():
     elif command == 'set_mode':
         mode = data['mode']
         success = set_mode(mode)
-    elif command == 'goto':
-        latitude = float(data['latitude'])
-        longitude = float(data['longitude'])
-        altitude = float(data['altitude'])
-        if set_mode('GUIDED'):
-            success = send_command_long(
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0, 0, 0, 0, latitude, longitude, altitude
-            )
-        else:
-            return jsonify({'status': 'failed_to_enter_guided_mode'}), 500
     else:
         return jsonify({'status': 'unknown_command'}), 400
     
     return jsonify({'status': 'success' if success else 'failed'}), 200 if success else 500
+
+@app.route('/mission', methods=['POST'])
+def start_mission():
+    waypoints = request.json['waypoints']
+    
+    if not connection:
+        return jsonify({'status': 'No active connection'}), 400
+
+    try:
+        # Clear any existing mission
+        connection.mav.mission_clear_all_send(connection.target_system, connection.target_component)
+        
+        # Wait for acknowledgment
+        ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+        if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+            return jsonify({'status': 'Failed to clear existing mission'}), 500
+
+        # Upload new mission
+        for i, wp in enumerate(waypoints):
+            connection.mav.mission_item_send(
+                connection.target_system,
+                connection.target_component,
+                i,  # seq
+                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                0,  # current
+                1,  # autocontinue
+                0, 0, 0, 0,  # param1-4
+                wp['lat'], wp['lng'], wp['altitude']
+            )
+
+        # Start mission
+        connection.mav.command_long_send(
+            connection.target_system,
+            connection.target_component,
+            mavutil.mavlink.MAV_CMD_MISSION_START,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+
+        return jsonify({'status': 'Mission started successfully'}), 200
+    except Exception as e:
+        return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
+    
 
 
 @app.route('/messages', methods=['GET'])
