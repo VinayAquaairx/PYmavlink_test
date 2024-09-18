@@ -338,7 +338,6 @@ def set_mode(mode):
     return False
 
 
-
 @app.route('/command', methods=['POST'])
 def command():
     data = request.json
@@ -367,6 +366,9 @@ def command():
         longitude = float(data['longitude'])
         altitude = float(data['altitude'])
         success = send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude, altitude)
+    elif command == 'set_mode':
+        mode = data['mode']
+        success = set_mode(mode)
     elif command == 'goto':
         latitude = float(data['latitude'])
         longitude = float(data['longitude'])
