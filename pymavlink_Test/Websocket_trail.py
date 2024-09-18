@@ -256,7 +256,71 @@ def request_data_streams():
                 0, msg_id, 100000, 0, 0, 0, 0, 0  # 10 Hz for each message type
             )
 
+def get_command_and_params(wp):
+    wp_type = wp['type']
+    params = wp['params']
 
+    if wp_type == 'WAYPOINT':
+        return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+                params['Delay'],
+                params['Acceptance Radius'],
+                params['Pass Radius'],
+                params['Yaw Angle'])
+    elif wp_type == 'LOITER_UNLIMITED':
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
+                params['Radius'],
+                0,  # Empty
+                params['Direction'],
+                params['Yaw'])
+    elif wp_type == 'LOITER_TIME':
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
+                params['Time'],
+                0,  # Empty
+                params['Radius'],
+                params['Yaw'])
+    elif wp_type == 'LOITER_TURNS':
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS,
+                params['Turns'],
+                0,  # Empty
+                params['Radius'],
+                params['Yaw'])
+    elif wp_type == 'RETURN_TO_LAUNCH':
+        return (mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
+                0, 0, 0, 0)
+    elif wp_type == 'LAND':
+        return (mavutil.mavlink.MAV_CMD_NAV_LAND,
+                params['Abort Alt'],
+                params['Precision Land'],
+                0, 0)
+    elif wp_type == 'TAKEOFF':
+        return (mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
+                params['Pitch Angle'],
+                0, 0,
+                params['Yaw Angle'])
+    elif wp_type == 'DO_CHANGE_SPEED':
+        return (mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,
+                params['Speed Type'],
+                params['Speed'],
+                params['Throttle'],
+                0)
+    elif wp_type == 'DO_SET_CAM_TRIGG_DIST':
+        return (mavutil.mavlink.MAV_CMD_DO_SET_CAM_TRIGG_DIST,
+                params['Distance'],
+                0,
+                0,
+                0,
+                params['Shutter'],
+                params['Trigger'],
+                0)
+    elif wp_type == 'DO_SET_ROI':
+        return (mavutil.mavlink.MAV_CMD_DO_SET_ROI,
+                params['ROI Mode'],
+                params['WP Index'],
+                params['ROI Index'],
+                0, 0, 0, 0)
+    else:
+        logger.warning(f"Unknown waypoint type: {wp_type}")
+        return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
 
 def upload_mission(waypoints):
     if not connection:
@@ -277,14 +341,17 @@ def upload_mission(waypoints):
             logger.error(f"Failed to receive MISSION_REQUEST for waypoint {i}")
             return False
         
+        # Set command and parameters based on waypoint type
+        command, param1, param2, param3, param4 = get_command_and_params(wp)
+
         connection.mav.mission_item_int_send(
             connection.target_system,
             connection.target_component,
             i,
             mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            command,
             0, 1,
-            0, 0, 0, 0,
+            param1, param2, param3, param4,
             int(wp['lat'] * 1e7),
             int(wp['lng'] * 1e7),
             wp['altitude']
@@ -292,12 +359,12 @@ def upload_mission(waypoints):
 
     # Wait for mission acceptance
     ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
-    if not ack or ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
-        logger.error("Mission uploaded successfully")
-        return True
+    if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+        logger.error("Mission upload failed")
+        return False
 
-    logger.info("Mission upload Failed")
-    return False
+    logger.info("Mission uploaded successfully")
+    return True
 
 
 

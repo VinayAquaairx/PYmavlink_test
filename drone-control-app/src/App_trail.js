@@ -49,6 +49,50 @@ const Input = ({ type, value, onChange, placeholder }) => (
   />
 );
 
+
+const missionItemTypes = {
+    WAYPOINT: { 
+      name: 'Waypoint',
+      params: ['Delay', 'Acceptance Radius', 'Pass Radius', 'Yaw Angle']
+    },
+    LOITER_UNLIMITED: { 
+      name: 'Loiter Unlimited',
+      params: ['Radius', 'Yaw', 'Direction']
+    },
+    LOITER_TIME: { 
+      name: 'Loiter Time',
+      params: ['Time', 'Radius', 'Yaw', 'Direction']
+    },
+    LOITER_TURNS: { 
+      name: 'Loiter Turns',
+      params: ['Turns', 'Radius', 'Yaw', 'Direction']
+    },
+    RETURN_TO_LAUNCH: { 
+      name: 'Return to Launch',
+      params: []
+    },
+    LAND: { 
+      name: 'Land',
+      params: ['Abort Alt', 'Precision Land']
+    },
+    TAKEOFF: { 
+      name: 'Takeoff',
+      params: ['Pitch Angle', 'Yaw Angle']
+    },
+    DO_CHANGE_SPEED: { 
+      name: 'Change Speed',
+      params: ['Speed Type', 'Speed', 'Throttle']
+    },
+    DO_SET_CAM_TRIGG_DIST: { 
+      name: 'Camera Trigger Distance',
+      params: ['Distance', 'Shutter', 'Trigger']
+    },
+    DO_SET_ROI: { 
+      name: 'Region of Interest',
+      params: ['ROI Mode', 'WP Index', 'ROI Index']
+    },
+  };
+
 const Modal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
 
@@ -68,24 +112,6 @@ const Alert = ({ children }) => (
   </div>
 );
 
-const MissionItemTypes = {
-    WAYPOINT: 'WAYPOINT',
-    SPLINE_WAYPOINT: 'SPLINE_WAYPOINT',
-    LOITER_UNLIM: 'LOITER_UNLIM',
-    LOITER_TIME: 'LOITER_TIME',
-    LOITER_TURNS: 'LOITER_TURNS',
-    RETURN_TO_LAUNCH: 'RETURN_TO_LAUNCH',
-    LAND: 'LAND',
-    TAKEOFF: 'TAKEOFF',
-    DELAY: 'DELAY',
-    GUIDED_ENABLE: 'GUIDED_ENABLE',
-    DO_SET_ROI: 'DO_SET_ROI',
-    DO_CHANGE_SPEED: 'DO_CHANGE_SPEED',
-    JUMP: 'JUMP',
-  };
-
-
-
 const DroneControlPanel = () => {
   const [droneStatus, setDroneStatus] = useState({});
   const [isArmed, setIsArmed] = useState(false);
@@ -97,203 +123,9 @@ const DroneControlPanel = () => {
   const [homePosition, setHomePosition] = useState(null);
   const [tempMarker, setTempMarker] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
-  const [selectedWaypoint, setSelectedWaypoint] = useState(null);
   const [missionMode, setMissionMode] = useState(false);
 
   const mapRef = useRef();
-
-
-
-  const handleAddWaypoint = (latlng) => {
-    const newWaypoint = {
-      id: Date.now(),
-      lat: latlng.lat,
-      lng: latlng.lng,
-      altitude: 10,
-      type: MissionItemTypes.WAYPOINT,
-      acceptanceRadius: 5,
-      holdTime: 0,
-      yaw: 0,
-      orbits: 0,
-      delay: 0,
-      speed: 0,
-      roi: { lat: 0, lng: 0, altitude: 0 },
-      jumpSequence: 1,
-      jumpRepeat: 1,
-    };
-    setWaypoints([...waypoints, newWaypoint]);
-  };
-
-const handleUpdateWaypoint = (index, updates) => {
-    const newWaypoints = [...waypoints];
-    newWaypoints[index] = { ...newWaypoints[index], ...updates };
-    setWaypoints(newWaypoints);
-  };
-
-
-
-  const renderWaypointForm = (waypoint, index) => {
-    switch (waypoint.type) {
-      case MissionItemTypes.WAYPOINT:
-      case MissionItemTypes.SPLINE_WAYPOINT:
-        return (
-          <>
-            <div>
-              Altitude:
-              <input
-                type="number"
-                value={waypoint.altitude}
-                onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
-              />
-            </div>
-            <div>
-              Acceptance Radius:
-              <input
-                type="number"
-                value={waypoint.acceptanceRadius}
-                onChange={(e) => handleUpdateWaypoint(index, { acceptanceRadius: parseFloat(e.target.value) })}
-              />
-            </div>
-            <div>
-              Hold Time:
-              <input
-                type="number"
-                value={waypoint.holdTime}
-                onChange={(e) => handleUpdateWaypoint(index, { holdTime: parseFloat(e.target.value) })}
-              />
-            </div>
-          </>
-        );
-      case MissionItemTypes.LOITER_UNLIM:
-      case MissionItemTypes.LOITER_TIME:
-      case MissionItemTypes.LOITER_TURNS:
-        return (
-          <>
-            <div>
-              Altitude:
-              <input
-                type="number"
-                value={waypoint.altitude}
-                onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
-              />
-            </div>
-            <div>
-              {waypoint.type === MissionItemTypes.LOITER_TIME ? 'Loiter Time' : 'Number of Turns'}:
-              <input
-                type="number"
-                value={waypoint.type === MissionItemTypes.LOITER_TIME ? waypoint.holdTime : waypoint.orbits}
-                onChange={(e) => handleUpdateWaypoint(index, 
-                  waypoint.type === MissionItemTypes.LOITER_TIME 
-                    ? { holdTime: parseFloat(e.target.value) }
-                    : { orbits: parseInt(e.target.value) }
-                )}
-              />
-            </div>
-          </>
-        );
-      case MissionItemTypes.RETURN_TO_LAUNCH:
-        return null;
-      case MissionItemTypes.LAND:
-        return (
-          <div>
-            Altitude:
-            <input
-              type="number"
-              value={waypoint.altitude}
-              onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
-            />
-          </div>
-        );
-      case MissionItemTypes.TAKEOFF:
-        return (
-          <div>
-            Takeoff Altitude:
-            <input
-              type="number"
-              value={waypoint.altitude}
-              onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
-            />
-          </div>
-        );
-      case MissionItemTypes.DELAY:
-        return (
-          <div>
-            Delay Time:
-            <input
-              type="number"
-              value={waypoint.delay}
-              onChange={(e) => handleUpdateWaypoint(index, { delay: parseFloat(e.target.value) })}
-            />
-          </div>
-        );
-      case MissionItemTypes.DO_CHANGE_SPEED:
-        return (
-          <div>
-            Speed:
-            <input
-              type="number"
-              value={waypoint.speed}
-              onChange={(e) => handleUpdateWaypoint(index, { speed: parseFloat(e.target.value) })}
-            />
-          </div>
-        );
-      case MissionItemTypes.DO_SET_ROI:
-        return (
-          <>
-            <div>
-              ROI Latitude:
-              <input
-                type="number"
-                value={waypoint.roi.lat}
-                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, lat: parseFloat(e.target.value) } })}
-              />
-            </div>
-            <div>
-              ROI Longitude:
-              <input
-                type="number"
-                value={waypoint.roi.lng}
-                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, lng: parseFloat(e.target.value) } })}
-              />
-            </div>
-            <div>
-              ROI Altitude:
-              <input
-                type="number"
-                value={waypoint.roi.altitude}
-                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, altitude: parseFloat(e.target.value) } })}
-              />
-            </div>
-          </>
-        );
-      case MissionItemTypes.JUMP:
-        return (
-          <>
-            <div>
-              Jump Sequence:
-              <input
-                type="number"
-                value={waypoint.jumpSequence}
-                onChange={(e) => handleUpdateWaypoint(index, { jumpSequence: parseInt(e.target.value) })}
-              />
-            </div>
-            <div>
-              Repeat Count:
-              <input
-                type="number"
-                value={waypoint.jumpRepeat}
-                onChange={(e) => handleUpdateWaypoint(index, { jumpRepeat: parseInt(e.target.value) })}
-              />
-            </div>
-          </>
-        );
-      default:
-        return null;
-    }
-  };
-
-
-
 
   const modeMap = {
     0: 'STABILIZE',
@@ -392,6 +224,54 @@ const handleUpdateWaypoint = (index, updates) => {
       setTempMarker(null);
     }
   };
+
+  const handleAddWaypoint = (latlng) => {
+    const newWaypoint = {
+      id: Date.now(),
+      lat: latlng.lat,
+      lng: latlng.lng,
+      altitude: 10,
+      type: 'WAYPOINT',
+      params: {
+        Delay: 0,
+        'Acceptance Radius': 5,
+        'Pass Radius': 0,
+        'Yaw Angle': 0
+      }
+    };
+    setWaypoints([...waypoints, newWaypoint]);
+  };
+
+  const handleUpdateWaypoint = (index, field, value) => {
+    const newWaypoints = [...waypoints];
+    if (field === 'type') {
+      newWaypoints[index] = {
+        ...newWaypoints[index],
+        type: value,
+        params: Object.fromEntries(missionItemTypes[value].params.map(param => [param, 0]))
+      };
+    } else if (field.startsWith('param_')) {
+      const paramName = field.split('param_')[1];
+      newWaypoints[index].params[paramName] = value;
+    } else {
+      newWaypoints[index][field] = value;
+    }
+    setWaypoints(newWaypoints);
+  };
+
+  const renderWaypointParams = (waypoint, index) => {
+    return missionItemTypes[waypoint.type].params.map(param => (
+      <div key={param}>
+        {param}:
+        <input
+          type="number"
+          value={waypoint.params[param]}
+          onChange={(e) => handleUpdateWaypoint(index, `param_${param}`, parseFloat(e.target.value))}
+        />
+      </div>
+    ));
+  };
+
 
 
     const handleStartMission = async () => {
@@ -550,26 +430,31 @@ const handleUpdateWaypoint = (index, updates) => {
               key={waypoint.id}
               position={[waypoint.lat, waypoint.lng]}
               icon={waypointIcon}
-              eventHandlers={{
-                click: () => setSelectedWaypoint(index),
-              }}
             >
               <Popup>
                 <div>Waypoint {index + 1}</div>
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
                 <div>
+                  Alt: 
+                  <input
+                    type="number"
+                    value={waypoint.altitude}
+                    onChange={(e) => handleUpdateWaypoint(index, 'altitude', parseFloat(e.target.value))}
+                  />
+                </div>
+                <div>
                   Type: 
                   <select
                     value={waypoint.type}
-                    onChange={(e) => handleUpdateWaypoint(index, { type: e.target.value })}
+                    onChange={(e) => handleUpdateWaypoint(index, 'type', e.target.value)}
                   >
-                    {Object.values(MissionItemTypes).map((type) => (
-                      <option key={type} value={type}>{type}</option>
+                    {Object.entries(missionItemTypes).map(([type, details]) => (
+                      <option key={type} value={type}>{details.name}</option>
                     ))}
                   </select>
                 </div>
-                {renderWaypointForm(waypoint, index)}
+                {renderWaypointParams(waypoint, index)}
                 <div>
                   Distance: {calculateDistance(
                     index === 0 ? dronePosition : waypoints[index-1],
@@ -581,23 +466,17 @@ const handleUpdateWaypoint = (index, updates) => {
           ))}
         </MapContainer>
       </div>
-
-
       <div className="waypoint-list">
         <h3>Mission Items</h3>
         {waypoints.map((waypoint, index) => (
           <div key={waypoint.id} className="waypoint-item">
-            <span>Item {index + 1}</span>
-            <span>Type: {waypoint.type}</span>
+            <span>{index + 1}: {missionItemTypes[waypoint.type].name}</span>
             <span>Lat: {waypoint.lat.toFixed(6)}</span>
             <span>Lon: {waypoint.lng.toFixed(6)}</span>
             <span>Alt: {waypoint.altitude}m</span>
-            <Button
-              onClick={() => setSelectedWaypoint(index)}
-              className="edit-waypoint-button"
-            >
-              Edit
-            </Button>
+            {Object.entries(waypoint.params).map(([param, value]) => (
+              <span key={param}>{param}: {value}</span>
+            ))}
             <Button
               onClick={() => {
                 const newWaypoints = waypoints.filter((_, i) => i !== index);
@@ -610,16 +489,6 @@ const handleUpdateWaypoint = (index, updates) => {
           </div>
         ))}
       </div>
-
-      {selectedWaypoint !== null && (
-        <div className="waypoint-editor">
-          <h3>Edit Mission Item {selectedWaypoint + 1}</h3>
-          {renderWaypointForm(waypoints[selectedWaypoint], selectedWaypoint)}
-          <Button onClick={() => setSelectedWaypoint(null)}>Close Editor</Button>
-        </div>
-      )}
-
-      
       <div className="status-display">
         <h2>Drone Status</h2>
         <pre>
