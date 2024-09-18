@@ -155,7 +155,17 @@ def update_drone_status(msg):
 
 
 
-
+def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
+    if connection:
+        connection.mav.command_long_send(
+            connection.target_system, connection.target_component,
+            command, 0, param1, param2, param3, param4, param5, param6, param7
+        )
+        # Wait for command acknowledgment
+        ack = connection.recv_match(type='COMMAND_ACK', blocking=True, timeout=5)
+        if ack:
+            return ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED
+    return False
 
 
 def reset_telemetry_values():
@@ -248,7 +258,78 @@ def request_data_streams():
 
 
 
+def upload_mission(waypoints):
+    if not connection:
+        return False
 
+    # Clear any existing mission
+    connection.mav.mission_clear_all_send(connection.target_system, connection.target_component)
+    ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+    if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
+        logger.error("Failed to clear existing mission")
+        return False
+
+    # Upload new mission
+    connection.mav.mission_count_send(connection.target_system, connection.target_component, len(waypoints))
+    for i, wp in enumerate(waypoints):
+        msg = connection.recv_match(type=['MISSION_REQUEST'], blocking=True, timeout=5)
+        if not msg:
+            logger.error(f"Failed to receive MISSION_REQUEST for waypoint {i}")
+            return False
+        
+        connection.mav.mission_item_int_send(
+            connection.target_system,
+            connection.target_component,
+            i,
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
+            mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
+            0, 1,
+            0, 0, 0, 0,
+            int(wp['lat'] * 1e7),
+            int(wp['lng'] * 1e7),
+            wp['altitude']
+        )
+
+    # Wait for mission acceptance
+    ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
+    if not ack or ack.type == mavutil.mavlink.MAV_MISSION_ACCEPTED:
+        logger.error("Mission uploaded successfully")
+        return True
+
+    logger.info("Mission upload Failed")
+    return False
+
+
+
+@app.route('/mission', methods=['POST'])
+def start_mission():
+    waypoints = request.json['waypoints']
+    
+    if not connection:
+        return jsonify({'status': 'No active connection'}), 400
+
+    try:
+        # Upload mission
+        if not upload_mission(waypoints):
+            return jsonify({'status': 'Failed to upload mission'}), 500
+
+        # Set mode to AUTO
+        if not set_mode('AUTO'):
+            return jsonify({'status': 'Failed to set AUTO mode'}), 500
+
+        # Arm the drone
+        if not send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1):
+            return jsonify({'status': 'Failed to arm the drone'}), 500
+
+        # Start mission
+        if not send_command_long(mavutil.mavlink.MAV_CMD_MISSION_START):
+            return jsonify({'status': 'Failed to start mission'}), 500
+
+        return jsonify({'status': 'Mission started successfully'}), 200
+    except Exception as e:
+        logger.error(f"Error starting mission: {str(e)}")
+        return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
+    
 
 
 @app.route('/connect', methods=['POST'])
@@ -287,30 +368,7 @@ def disconnect_drone():
     else:
         return jsonify({"status": "No active connection"}), 400
     
-def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
-    if connection:
-        connection.mav.command_long_send(
-            connection.target_system, connection.target_component,
-            command, 0, param1, param2, param3, param4, param5, param6, param7
-        )
-        # Wait for command acknowledgment
-        ack = connection.recv_match(type='COMMAND_ACK', blocking=True, timeout=5)
-        if ack:
-            return ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED
-    return False
-
-
-
 message_queue = Queue()
-
-# def decode_mavlink_message(msg):
-#     if msg.get_type() == 'STATUSTEXT':
-#         return f"AP: {msg.text}"
-#     elif msg.get_type() == 'COMMAND_ACK':
-#         return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
-#     else:
-#         return f"Received {msg.get_type()} message"
-    
 
 
 def fetch_drone_data():
@@ -377,48 +435,6 @@ def command():
     
     return jsonify({'status': 'success' if success else 'failed'}), 200 if success else 500
 
-@app.route('/mission', methods=['POST'])
-def start_mission():
-    waypoints = request.json['waypoints']
-    
-    if not connection:
-        return jsonify({'status': 'No active connection'}), 400
-
-    try:
-        # Clear any existing mission
-        connection.mav.mission_clear_all_send(connection.target_system, connection.target_component)
-        
-        # Wait for acknowledgment
-        ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
-        if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-            return jsonify({'status': 'Failed to clear existing mission'}), 500
-
-        # Upload new mission
-        for i, wp in enumerate(waypoints):
-            connection.mav.mission_item_send(
-                connection.target_system,
-                connection.target_component,
-                i,  # seq
-                mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-                mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                0,  # current
-                1,  # autocontinue
-                0, 0, 0, 0,  # param1-4
-                wp['lat'], wp['lng'], wp['altitude']
-            )
-
-        # Start mission
-        connection.mav.command_long_send(
-            connection.target_system,
-            connection.target_component,
-            mavutil.mavlink.MAV_CMD_MISSION_START,
-            0, 0, 0, 0, 0, 0, 0, 0
-        )
-
-        return jsonify({'status': 'Mission started successfully'}), 200
-    except Exception as e:
-        return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
-    
 
 
 @app.route('/messages', methods=['GET'])

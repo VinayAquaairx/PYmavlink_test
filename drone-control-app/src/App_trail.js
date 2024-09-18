@@ -8,8 +8,6 @@ import { IoIosHome } from "react-icons/io";
 import { FaLocationDot } from "react-icons/fa6";
 import './DroneControlPanel.css';
 
-
-
 // Custom icon for drone
 const droneIcon = new L.Icon({
   iconUrl: PiDroneBold,
@@ -32,6 +30,7 @@ const waypointIcon = new L.Icon({
   iconRetinaUrl: FaLocationDot,
   iconSize: [25, 25],
   iconAnchor: [12, 12],
+  iconColor: 'red',
 });
 
 const Button = ({ onClick, className, children }) => (
@@ -69,6 +68,24 @@ const Alert = ({ children }) => (
   </div>
 );
 
+const MissionItemTypes = {
+    WAYPOINT: 'WAYPOINT',
+    SPLINE_WAYPOINT: 'SPLINE_WAYPOINT',
+    LOITER_UNLIM: 'LOITER_UNLIM',
+    LOITER_TIME: 'LOITER_TIME',
+    LOITER_TURNS: 'LOITER_TURNS',
+    RETURN_TO_LAUNCH: 'RETURN_TO_LAUNCH',
+    LAND: 'LAND',
+    TAKEOFF: 'TAKEOFF',
+    DELAY: 'DELAY',
+    GUIDED_ENABLE: 'GUIDED_ENABLE',
+    DO_SET_ROI: 'DO_SET_ROI',
+    DO_CHANGE_SPEED: 'DO_CHANGE_SPEED',
+    JUMP: 'JUMP',
+  };
+
+
+
 const DroneControlPanel = () => {
   const [droneStatus, setDroneStatus] = useState({});
   const [isArmed, setIsArmed] = useState(false);
@@ -80,9 +97,203 @@ const DroneControlPanel = () => {
   const [homePosition, setHomePosition] = useState(null);
   const [tempMarker, setTempMarker] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
+  const [selectedWaypoint, setSelectedWaypoint] = useState(null);
   const [missionMode, setMissionMode] = useState(false);
 
   const mapRef = useRef();
+
+
+
+  const handleAddWaypoint = (latlng) => {
+    const newWaypoint = {
+      id: Date.now(),
+      lat: latlng.lat,
+      lng: latlng.lng,
+      altitude: 10,
+      type: MissionItemTypes.WAYPOINT,
+      acceptanceRadius: 5,
+      holdTime: 0,
+      yaw: 0,
+      orbits: 0,
+      delay: 0,
+      speed: 0,
+      roi: { lat: 0, lng: 0, altitude: 0 },
+      jumpSequence: 1,
+      jumpRepeat: 1,
+    };
+    setWaypoints([...waypoints, newWaypoint]);
+  };
+
+const handleUpdateWaypoint = (index, updates) => {
+    const newWaypoints = [...waypoints];
+    newWaypoints[index] = { ...newWaypoints[index], ...updates };
+    setWaypoints(newWaypoints);
+  };
+
+
+
+  const renderWaypointForm = (waypoint, index) => {
+    switch (waypoint.type) {
+      case MissionItemTypes.WAYPOINT:
+      case MissionItemTypes.SPLINE_WAYPOINT:
+        return (
+          <>
+            <div>
+              Altitude:
+              <input
+                type="number"
+                value={waypoint.altitude}
+                onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div>
+              Acceptance Radius:
+              <input
+                type="number"
+                value={waypoint.acceptanceRadius}
+                onChange={(e) => handleUpdateWaypoint(index, { acceptanceRadius: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div>
+              Hold Time:
+              <input
+                type="number"
+                value={waypoint.holdTime}
+                onChange={(e) => handleUpdateWaypoint(index, { holdTime: parseFloat(e.target.value) })}
+              />
+            </div>
+          </>
+        );
+      case MissionItemTypes.LOITER_UNLIM:
+      case MissionItemTypes.LOITER_TIME:
+      case MissionItemTypes.LOITER_TURNS:
+        return (
+          <>
+            <div>
+              Altitude:
+              <input
+                type="number"
+                value={waypoint.altitude}
+                onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
+              />
+            </div>
+            <div>
+              {waypoint.type === MissionItemTypes.LOITER_TIME ? 'Loiter Time' : 'Number of Turns'}:
+              <input
+                type="number"
+                value={waypoint.type === MissionItemTypes.LOITER_TIME ? waypoint.holdTime : waypoint.orbits}
+                onChange={(e) => handleUpdateWaypoint(index, 
+                  waypoint.type === MissionItemTypes.LOITER_TIME 
+                    ? { holdTime: parseFloat(e.target.value) }
+                    : { orbits: parseInt(e.target.value) }
+                )}
+              />
+            </div>
+          </>
+        );
+      case MissionItemTypes.RETURN_TO_LAUNCH:
+        return null;
+      case MissionItemTypes.LAND:
+        return (
+          <div>
+            Altitude:
+            <input
+              type="number"
+              value={waypoint.altitude}
+              onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
+            />
+          </div>
+        );
+      case MissionItemTypes.TAKEOFF:
+        return (
+          <div>
+            Takeoff Altitude:
+            <input
+              type="number"
+              value={waypoint.altitude}
+              onChange={(e) => handleUpdateWaypoint(index, { altitude: parseFloat(e.target.value) })}
+            />
+          </div>
+        );
+      case MissionItemTypes.DELAY:
+        return (
+          <div>
+            Delay Time:
+            <input
+              type="number"
+              value={waypoint.delay}
+              onChange={(e) => handleUpdateWaypoint(index, { delay: parseFloat(e.target.value) })}
+            />
+          </div>
+        );
+      case MissionItemTypes.DO_CHANGE_SPEED:
+        return (
+          <div>
+            Speed:
+            <input
+              type="number"
+              value={waypoint.speed}
+              onChange={(e) => handleUpdateWaypoint(index, { speed: parseFloat(e.target.value) })}
+            />
+          </div>
+        );
+      case MissionItemTypes.DO_SET_ROI:
+        return (
+          <>
+            <div>
+              ROI Latitude:
+              <input
+                type="number"
+                value={waypoint.roi.lat}
+                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, lat: parseFloat(e.target.value) } })}
+              />
+            </div>
+            <div>
+              ROI Longitude:
+              <input
+                type="number"
+                value={waypoint.roi.lng}
+                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, lng: parseFloat(e.target.value) } })}
+              />
+            </div>
+            <div>
+              ROI Altitude:
+              <input
+                type="number"
+                value={waypoint.roi.altitude}
+                onChange={(e) => handleUpdateWaypoint(index, { roi: { ...waypoint.roi, altitude: parseFloat(e.target.value) } })}
+              />
+            </div>
+          </>
+        );
+      case MissionItemTypes.JUMP:
+        return (
+          <>
+            <div>
+              Jump Sequence:
+              <input
+                type="number"
+                value={waypoint.jumpSequence}
+                onChange={(e) => handleUpdateWaypoint(index, { jumpSequence: parseInt(e.target.value) })}
+              />
+            </div>
+            <div>
+              Repeat Count:
+              <input
+                type="number"
+                value={waypoint.jumpRepeat}
+                onChange={(e) => handleUpdateWaypoint(index, { jumpRepeat: parseInt(e.target.value) })}
+              />
+            </div>
+          </>
+        );
+      default:
+        return null;
+    }
+  };
+
+
+
 
   const modeMap = {
     0: 'STABILIZE',
@@ -135,23 +346,11 @@ const DroneControlPanel = () => {
     return () => clearInterval(intervalId);
   }, []);
 
-  const handleCommand = async (command, params = {}) => {
-    try {
-      const response = await axios.post('http://localhost:5001/command', { command, ...params });
-      if (response.data.status === 'success') {
-        setAlertMessage(`${command} command executed successfully`);
-      } else {
-        setAlertMessage(`Failed to execute ${command} command`);
-      }
-    } catch (error) {
-      console.error(`Error executing ${command} command:`, error);
-      setAlertMessage(`Error executing ${command} command`);
-    }
-  };
 
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
   };
+
 
   const handleTakeoff = async () => {
     if (modeName !== 'GUIDED') {
@@ -175,6 +374,8 @@ const DroneControlPanel = () => {
     setShowAltitudeModal(true);
   };
 
+
+
   const handleAltitudeSubmit = () => {
     setShowAltitudeModal(false);
     handleCommand('takeoff', { altitude: parseFloat(altitude) });
@@ -192,28 +393,32 @@ const DroneControlPanel = () => {
     }
   };
 
-  const handleAddWaypoint = (latlng) => {
-    const newWaypoint = {
-      id: Date.now(),
-      lat: latlng.lat,
-      lng: latlng.lng,
-      altitude: 10,
-      mode: 'GUIDED'
-    };
-    setWaypoints([...waypoints, newWaypoint]);
-  };
 
-  const handleStartMission = async () => {
+    const handleStartMission = async () => {
     try {
       const response = await axios.post('http://localhost:5001/mission', { waypoints });
-      if (response.data.status === 'success') {
+      if (response.data.status === 'Mission started successfully') {
         setAlertMessage('Mission started successfully');
       } else {
-        setAlertMessage('Failed to start mission');
+        setAlertMessage(`Failed to start mission: ${response.data.status}`);
       }
     } catch (error) {
       console.error('Error starting mission:', error);
-      setAlertMessage('Error starting mission');
+      setAlertMessage(`Error starting mission: ${error.response?.data?.status || error.message}`);
+    }
+  };
+
+  const handleCommand = async (command, params = {}) => {
+    try {
+      const response = await axios.post('http://localhost:5001/command', { command, ...params });
+      if (response.data.status === 'success') {
+        setAlertMessage(`${command} command executed successfully`);
+      } else {
+        setAlertMessage(`Failed to execute ${command} command: ${response.data.status}`);
+      }
+    } catch (error) {
+      console.error(`Error executing ${command} command:`, error);
+      setAlertMessage(`Error executing ${command} command: ${error.response?.data?.status || error.message}`);
     }
   };
 
@@ -275,12 +480,20 @@ const DroneControlPanel = () => {
       </Button>
 
       {missionMode && (
-        <Button
-          onClick={handleStartMission}
-          className="start-mission-button"
-        >
-          Start Mission
-        </Button>
+        <div className="mission-controls">
+          <Button
+            onClick={handleStartMission}
+            className="start-mission-button"
+          >
+            Start Mission
+          </Button>
+          <Button
+            onClick={() => setWaypoints([])}
+            className="clear-mission-button"
+          >
+            Clear Mission
+          </Button>
+        </div>
       )}
 
       {alertMessage && (
@@ -337,49 +550,76 @@ const DroneControlPanel = () => {
               key={waypoint.id}
               position={[waypoint.lat, waypoint.lng]}
               icon={waypointIcon}
+              eventHandlers={{
+                click: () => setSelectedWaypoint(index),
+              }}
             >
               <Popup>
                 <div>Waypoint {index + 1}</div>
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
                 <div>
-                  Alt: 
-                  <input
-                    type="number"
-                    value={waypoint.altitude}
-                    onChange={(e) => {
-                      const newWaypoints = [...waypoints];
-                      newWaypoints[index].altitude = parseFloat(e.target.value);
-                      setWaypoints(newWaypoints);
-                    }}
-                  />
-                </div>
-                <div>
-                  Mode: 
+                  Type: 
                   <select
-                    value={waypoint.mode}
-                    onChange={(e) => {
-                      const newWaypoints = [...waypoints];
-                      newWaypoints[index].mode = e.target.value;
-                      setWaypoints(newWaypoints);
-                    }}
+                    value={waypoint.type}
+                    onChange={(e) => handleUpdateWaypoint(index, { type: e.target.value })}
                   >
-                    {Object.values(modeMap).map((mode) => (
-                      <option key={mode} value={mode}>{mode}</option>
+                    {Object.values(MissionItemTypes).map((type) => (
+                      <option key={type} value={type}>{type}</option>
                     ))}
                   </select>
                 </div>
-                {index > 0 && (
-                  <div>
-                    Distance: {calculateDistance(waypoints[index-1], waypoint).toFixed(2)} m
-                  </div>
-                )}
+                {renderWaypointForm(waypoint, index)}
+                <div>
+                  Distance: {calculateDistance(
+                    index === 0 ? dronePosition : waypoints[index-1],
+                    waypoint
+                  ).toFixed(2)} m
+                </div>
               </Popup>
             </Marker>
           ))}
         </MapContainer>
       </div>
 
+
+      <div className="waypoint-list">
+        <h3>Mission Items</h3>
+        {waypoints.map((waypoint, index) => (
+          <div key={waypoint.id} className="waypoint-item">
+            <span>Item {index + 1}</span>
+            <span>Type: {waypoint.type}</span>
+            <span>Lat: {waypoint.lat.toFixed(6)}</span>
+            <span>Lon: {waypoint.lng.toFixed(6)}</span>
+            <span>Alt: {waypoint.altitude}m</span>
+            <Button
+              onClick={() => setSelectedWaypoint(index)}
+              className="edit-waypoint-button"
+            >
+              Edit
+            </Button>
+            <Button
+              onClick={() => {
+                const newWaypoints = waypoints.filter((_, i) => i !== index);
+                setWaypoints(newWaypoints);
+              }}
+              className="remove-waypoint-button"
+            >
+              Remove
+            </Button>
+          </div>
+        ))}
+      </div>
+
+      {selectedWaypoint !== null && (
+        <div className="waypoint-editor">
+          <h3>Edit Mission Item {selectedWaypoint + 1}</h3>
+          {renderWaypointForm(waypoints[selectedWaypoint], selectedWaypoint)}
+          <Button onClick={() => setSelectedWaypoint(null)}>Close Editor</Button>
+        </div>
+      )}
+
+      
       <div className="status-display">
         <h2>Drone Status</h2>
         <pre>
