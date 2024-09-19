@@ -267,8 +267,6 @@ const DroneControlPanel = () => {
     ));
   };
 
-
-
     const handleStartMission = async () => {
     try {
       const response = await axios.post('http://localhost:5001/mission', { waypoints });
@@ -461,6 +459,7 @@ const DroneControlPanel = () => {
           ))}
         </MapContainer>
       </div>
+      
       <div className="waypoint-list">
         <h3>Mission Items</h3>
         {waypoints.map((waypoint, index) => (
@@ -484,6 +483,7 @@ const DroneControlPanel = () => {
           </div>
         ))}
       </div>
+      
       <div className="status-display">
         <h2>Drone Status</h2>
         <pre>
