@@ -523,6 +523,32 @@ def set_mode(mode):
         )
     return False
 
+
+@app.route('/full_parameters', methods=['GET'])
+def get_full_parameters():
+    if not connection:
+        return jsonify({"error": "No active connection"}), 400
+
+    connection.mav.param_request_list_send(connection.target_system, connection.target_component)
+    
+    start = time.time()
+    param_list = []
+    while time.time() - start < 30:  # Wait for up to 30 seconds
+        msg = connection.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
+        if msg:
+            param_list.append({
+                'name': msg.param_id,
+                'value': msg.param_value,
+                'type': msg.param_type,
+            })
+        else:
+            break  # No more parameters
+
+    return jsonify({"parameters": param_list})
+
+
+
+
 @app.route('/command', methods=['POST'])
 def command():
     data = request.json

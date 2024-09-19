@@ -7,6 +7,7 @@ import { PiDroneBold } from "react-icons/pi";
 import { IoIosHome } from "react-icons/io";
 import { FaLocationDot } from "react-icons/fa6";
 import './DroneControlPanel.css';
+import './App_trail.css'
 
 // Custom icon for drone
 const droneIcon = new L.Icon({
@@ -111,6 +112,68 @@ const Alert = ({ children }) => (
   </div>
 );
 
+
+
+
+const ParameterList = ({ isOpen, onClose }) => {
+  const [parameters, setParameters] = useState([]);
+  const [loading, setLoading] = useState(true);
+
+  useEffect(() => {
+    if (isOpen) {
+      fetchParameters();
+    }
+  }, [isOpen]);
+
+  const fetchParameters = async () => {
+    try {
+      const response = await axios.get('http://localhost:5001/full_parameters');
+      // Sort the parameters alphabetically by name
+      const sortedParameters = response.data.parameters.sort((a, b) => 
+        a.name.localeCompare(b.name)
+      );
+      setParameters(sortedParameters);
+      setLoading(false);
+    } catch (error) {
+      console.error('Error fetching parameters:', error);
+      setLoading(false);
+    }
+  };
+
+  if (!isOpen) return null;
+
+  return (
+    <div className="parameter-list-modal">
+      <div className="parameter-list-content">
+        <h2>Full Parameter List</h2>
+        {loading ? (
+          <p>Loading parameters...</p>
+        ) : (
+          <table className="parameter-table">
+            <thead>
+              <tr>
+                <th>Parameter Name</th>
+                <th>Value</th>
+                <th>Type</th>
+              </tr>
+            </thead>
+            <tbody>
+              {parameters.map((param, index) => (
+                <tr key={index}>
+                  <td>{param.name}</td>
+                  <td>{param.value}</td>
+                  <td>{param.type}</td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        )}
+        <button className="close-button" onClick={onClose}>Close</button>
+      </div>
+    </div>
+  );
+};
+
 const DroneControlPanel = () => {
   const [droneStatus, setDroneStatus] = useState({});
   const [isArmed, setIsArmed] = useState(false);
@@ -123,8 +186,18 @@ const DroneControlPanel = () => {
   const [tempMarker, setTempMarker] = useState(null);
   const [waypoints, setWaypoints] = useState([]);
   const [missionMode, setMissionMode] = useState(false);
+  const [selectedMode, setSelectedMode] = useState('');
+  const [showParameterList, setShowParameterList] = useState(false);
+
 
   const mapRef = useRef();
+
+  const handleCheckFullParams = () => {
+    setShowParameterList(true);
+  };
+
+
+
 
   const modeMap = {
     0: 'STABILIZE',
@@ -156,6 +229,14 @@ const DroneControlPanel = () => {
     27: 'AUTO_RTL',
   };
 
+
+  const handleModeChange = async (event) => {
+    const newMode = event.target.value;
+    setSelectedMode(newMode);
+    await handleCommand('set_mode', { mode: newMode });
+  };
+
+
   useEffect(() => {
     const fetchStatus = async () => {
       try {
@@ -176,6 +257,32 @@ const DroneControlPanel = () => {
 
     return () => clearInterval(intervalId);
   }, []);
+
+
+  useEffect(() => {
+    const fetchStatus = async () => {
+      try {
+        const response = await axios.get('http://localhost:5001/status');
+        setDroneStatus(response.data);
+        setIsArmed(response.data.armed === 128);
+        const currentMode = modeMap[response.data.mav_mode] || 'Unknown';
+        setModeName(currentMode);
+        setSelectedMode(currentMode); 
+        if (response.data.gps) {
+          setDronePosition([response.data.gps.lat, response.data.gps.lon]);
+        }
+      } catch (error) {
+        console.error('Error fetching drone status:', error);
+      }
+    };
+  
+    fetchStatus();
+    const intervalId = setInterval(fetchStatus, 1000);
+  
+    return () => clearInterval(intervalId);
+  }, []);
+
+
 
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
@@ -344,6 +451,33 @@ const DroneControlPanel = () => {
       >
         Return to Launch
       </Button>
+    <button 
+        onClick={handleCheckFullParams}
+        className="check-params-button"
+      >
+        Check Full Parameter List
+      </button>
+
+      <ParameterList 
+        isOpen={showParameterList} 
+        onClose={() => setShowParameterList(false)} 
+      />
+      <div className="mode-selector">
+        <label htmlFor="mode-select">Flight Mode: </label>
+        <select
+          id="mode-select"
+          value={selectedMode}
+          onChange={handleModeChange}
+          className="mode-dropdown"
+        >
+          <option value="">Select Mode</option>
+          {Object.entries(modeMap).map(([key, mode]) => (
+            <option key={key} value={mode}>
+              {mode}
+            </option>
+          ))}
+        </select>
+      </div>
 
       <Button
         onClick={() => setMissionMode(!missionMode)}
