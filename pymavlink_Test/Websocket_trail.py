@@ -4,16 +4,18 @@ from pymavlink import mavutil
 import serial.tools.list_ports
 import threading
 import time
+from pymavlink.dialects.v20 import ardupilotmega as mavlink2
 import logging
 import math
 import platform
 from queue import Queue
-
+import socket
 
 app = Flask(__name__)
 CORS(app,supports_credentials=True)
 
 connection = None
+mav = None
 home_position_set = False
 home_coordinates = {"lat": None, "lon": None, "alt": None}
 drone_status = {
@@ -53,6 +55,13 @@ drone_status = {
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+
+global_device = None
+global_baudrate = None
+global_protocol = None
+
 
 def list_serial_ports():
     if platform.system() == "Windows":
@@ -156,8 +165,8 @@ def update_drone_status(msg):
 
 
 def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
-    if connection:
-        connection.mav.command_long_send(
+    if connection and mav:  # NEW: Check if mav object exists
+        mav.command_long_send(
             connection.target_system, connection.target_component,
             command, 0, param1, param2, param3, param4, param5, param6, param7
         )
@@ -229,8 +238,8 @@ def decode_mavlink_message(msg):
 
 
 def request_data_streams():
-    if connection:
-        connection.mav.request_data_stream_send(
+     if connection and mav:
+        mav.request_data_stream_send(
             connection.target_system, connection.target_component,
             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
         )
@@ -250,7 +259,7 @@ def request_data_streams():
             mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
         ]
         for msg_id in message_types:
-            connection.mav.command_long_send(
+            mav.command_long_send(
                 connection.target_system, connection.target_component,
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
                 0, msg_id, 100000, 0, 0, 0, 0, 0  # 10 Hz for each message type
@@ -401,7 +410,7 @@ def start_mission():
 
 @app.route('/connect', methods=['POST'])
 def connect_drone():
-    global connection, home_position_set
+    global connection, home_position_set, mav, global_device, global_baudrate, global_protocol
     data = request.json
     protocol = data.get("protocol")
     
@@ -416,11 +425,22 @@ def connect_drone():
         return jsonify({"status": "Invalid connection type"}), 400
 
     try:
-        connection = mavutil.mavlink_connection(device, baud=baudrate if protocol == 'serial' else None)
+        # NEW: Store connection details globally
+        global_device = device
+        global_baudrate = baudrate if protocol == 'serial' else None
+        global_protocol = protocol
+
+        # NEW: Use MAVLink class for more control
+        connection = mavutil.mavlink_connection(device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+        mav = mavlink2.MAVLink(connection)
+        mav.srcSystem = 255
+        mav.srcComponent = 0
+
         connection.wait_heartbeat(timeout=10)
         home_position_set = False
         request_data_streams()
         threading.Thread(target=fetch_drone_data, daemon=True).start()
+        threading.Thread(target=send_heartbeat, daemon=True).start()  # NEW: Start heartbeat thread
         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
     except Exception as e:
         return jsonify({"status": f"Failed to connect: {str(e)}"}), 500
@@ -437,6 +457,36 @@ def disconnect_drone():
     
 message_queue = Queue()
 
+
+# NEW: Heartbeat function
+def send_heartbeat():
+    while True:
+        if connection and mav:
+            try:
+                mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0
+                )
+            except Exception as e:
+                logger.error(f"Error sending heartbeat: {e}")
+        time.sleep(1)
+
+
+# NEW: Reconnection function
+def reconnect_drone():
+    global connection, mav
+    if connection:
+        connection.close()
+    try:
+        connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+        mav = mavlink2.MAVLink(connection)
+        mav.srcSystem = 255
+        mav.srcComponent = 0
+        connection.wait_heartbeat(timeout=10)
+        request_data_streams()
+    except Exception as e:
+        logger.error(f"Failed to reconnect: {str(e)}")
 
 def fetch_drone_data():
     global connection, drone_status
@@ -460,7 +510,7 @@ def fetch_drone_data():
             time.sleep(1)
 
 def set_mode(mode):
-    if connection:
+    if connection and mav:  # NEW: Check if mav object exists
         if mode not in connection.mode_mapping():
             print(f'Unknown mode : {mode}')
             print(f'Try:', list(connection.mode_mapping().keys()))
