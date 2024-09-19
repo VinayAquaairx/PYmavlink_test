@@ -49,7 +49,6 @@ const Input = ({ type, value, onChange, placeholder }) => (
   />
 );
 
-
 const missionItemTypes = {
     WAYPOINT: { 
       name: 'Waypoint',
@@ -178,11 +177,9 @@ const DroneControlPanel = () => {
     return () => clearInterval(intervalId);
   }, []);
 
-
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
   };
-
 
   const handleTakeoff = async () => {
     if (modeName !== 'GUIDED') {
@@ -205,8 +202,6 @@ const DroneControlPanel = () => {
 
     setShowAltitudeModal(true);
   };
-
-
 
   const handleAltitudeSubmit = () => {
     setShowAltitudeModal(false);
