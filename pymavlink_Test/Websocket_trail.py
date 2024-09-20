@@ -9,7 +9,9 @@ import logging
 import math
 import platform
 from queue import Queue
+from collections import deque
 import socket
+
 
 app = Flask(__name__)
 CORS(app,supports_credentials=True)
@@ -227,15 +229,29 @@ def calculate_distance_to_home():
     return None
 
 
-def decode_mavlink_message(msg):
-    if msg.get_type() == 'STATUSTEXT':
-        return f"AP: {msg.text}"
-    elif msg.get_type() == 'COMMAND_ACK':
-        return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
-    else:
-        return f"Received {msg.get_type()} message"
-    
 
+# Create a queue for AP messages
+
+MAX_AP_MESSAGES = 1000 
+ap_messages = deque(maxlen=MAX_AP_MESSAGES)
+ap_messages_lock = threading.Lock()
+
+
+def process_mavlink_message(msg):
+    if msg.get_type() == 'STATUSTEXT':
+        severity = msg.severity
+        ap_message = {
+            "text": f"AP: {msg.text}",
+            "severity": severity
+        }
+        with ap_messages_lock:
+            ap_messages.append(ap_message)
+        logger.info(f"AP Message (Severity {severity}): {msg.text}")
+    elif msg.get_type() == 'COMMAND_ACK':
+        cmd_name = mavutil.mavlink.enums['MAV_CMD'][msg.command].name
+        result_name = mavutil.mavlink.enums['MAV_RESULT'][msg.result].name
+        cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
+        print(cmd_message)
 
 def request_data_streams():
      if connection and mav:
@@ -262,7 +278,7 @@ def request_data_streams():
             mav.command_long_send(
                 connection.target_system, connection.target_component,
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-                0, msg_id, 100000, 0, 0, 0, 0, 0  # 10 Hz for each message type
+                0, msg_id, 100000, 0, 0, 0, 0, 0 
             )
 
 def get_command_and_params(wp):
@@ -330,6 +346,9 @@ def get_command_and_params(wp):
     else:
         logger.warning(f"Unknown waypoint type: {wp_type}")
         return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
+
+
+
 
 def upload_mission(waypoints):
     if not connection:
@@ -473,7 +492,7 @@ def send_heartbeat():
         time.sleep(1)
 
 
-# NEW: Reconnection function
+
 def reconnect_drone():
     global connection, mav
     if connection:
@@ -494,13 +513,9 @@ def fetch_drone_data():
         if connection:
             try:
                 msg = connection.recv_match(blocking=True, timeout=1)
-                if msg:
-                    if msg.get_type() != 'BAD_DATA':
-                        logger.debug(f"Received message: {msg.get_type()}")
-                        update_drone_status(msg)
-                        message_queue.put(decode_mavlink_message(msg))
-                else:
-                    logger.warning("No message received")
+                if msg and msg.get_type() != 'BAD_DATA':
+                    update_drone_status(msg)
+                    process_mavlink_message(msg)
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
                 drone_status["connection_status"] = "Error"
@@ -508,6 +523,8 @@ def fetch_drone_data():
             logger.warning("No active connection")
             reset_telemetry_values()
             time.sleep(1)
+
+
 
 def set_mode(mode):
     if connection and mav:  # NEW: Check if mav object exists
@@ -581,11 +598,22 @@ def command():
 
 
 @app.route('/messages', methods=['GET'])
-def get_messages():
-    messages = []
-    while not message_queue.empty():
-        messages.append(message_queue.get())
-    return jsonify(messages)
+def get_ap_messages():
+    with ap_messages_lock:
+        return jsonify(list(ap_messages))
+
+
+@app.route('/ap_messages/clear', methods=['POST'])
+def clear_ap_messages():
+    with ap_messages_lock:
+        ap_messages.clear()
+    return jsonify({"status": "AP messages cleared"}), 200
+
+
+
+# Update the logging configuration
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @app.route('/com_ports', methods=['GET'])
 def get_com_ports():
