@@ -4,16 +4,20 @@ from pymavlink import mavutil
 import serial.tools.list_ports
 import threading
 import time
+from pymavlink.dialects.v20 import ardupilotmega as mavlink2
 import logging
 import math
 import platform
 from queue import Queue
+from collections import deque
+import socket
 
 
 app = Flask(__name__)
 CORS(app,supports_credentials=True)
 
 connection = None
+mav = None
 home_position_set = False
 home_coordinates = {"lat": None, "lon": None, "alt": None}
 drone_status = {
@@ -53,6 +57,13 @@ drone_status = {
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
+
+
+
+global_device = None
+global_baudrate = None
+global_protocol = None
+
 
 def list_serial_ports():
     if platform.system() == "Windows":
@@ -156,8 +167,8 @@ def update_drone_status(msg):
 
 
 def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
-    if connection:
-        connection.mav.command_long_send(
+    if connection and mav:  # NEW: Check if mav object exists
+        mav.command_long_send(
             connection.target_system, connection.target_component,
             command, 0, param1, param2, param3, param4, param5, param6, param7
         )
@@ -218,19 +229,33 @@ def calculate_distance_to_home():
     return None
 
 
-def decode_mavlink_message(msg):
-    if msg.get_type() == 'STATUSTEXT':
-        return f"AP: {msg.text}"
-    elif msg.get_type() == 'COMMAND_ACK':
-        return f"Got COMMAND_ACK: {mavutil.mavlink.enums['MAV_CMD'][msg.command].name}: {mavutil.mavlink.enums['MAV_RESULT'][msg.result].name}"
-    else:
-        return f"Received {msg.get_type()} message"
-    
 
+# Create a queue for AP messages
+
+MAX_AP_MESSAGES = 1000 
+ap_messages = deque(maxlen=MAX_AP_MESSAGES)
+ap_messages_lock = threading.Lock()
+
+
+def process_mavlink_message(msg):
+    if msg.get_type() == 'STATUSTEXT':
+        severity = msg.severity
+        ap_message = {
+            "text": f"AP: {msg.text}",
+            "severity": severity
+        }
+        with ap_messages_lock:
+            ap_messages.append(ap_message)
+        logger.info(f"AP Message (Severity {severity}): {msg.text}")
+    elif msg.get_type() == 'COMMAND_ACK':
+        cmd_name = mavutil.mavlink.enums['MAV_CMD'][msg.command].name
+        result_name = mavutil.mavlink.enums['MAV_RESULT'][msg.result].name
+        cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
+        print(cmd_message)
 
 def request_data_streams():
-    if connection:
-        connection.mav.request_data_stream_send(
+     if connection and mav:
+        mav.request_data_stream_send(
             connection.target_system, connection.target_component,
             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
         )
@@ -250,10 +275,10 @@ def request_data_streams():
             mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
         ]
         for msg_id in message_types:
-            connection.mav.command_long_send(
+            mav.command_long_send(
                 connection.target_system, connection.target_component,
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-                0, msg_id, 100000, 0, 0, 0, 0, 0  # 10 Hz for each message type
+                0, msg_id, 100000, 0, 0, 0, 0, 0 
             )
 
 def get_command_and_params(wp):
@@ -321,6 +346,9 @@ def get_command_and_params(wp):
     else:
         logger.warning(f"Unknown waypoint type: {wp_type}")
         return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
+
+
+
 
 def upload_mission(waypoints):
     if not connection:
@@ -401,7 +429,7 @@ def start_mission():
 
 @app.route('/connect', methods=['POST'])
 def connect_drone():
-    global connection, home_position_set
+    global connection, home_position_set, mav, global_device, global_baudrate, global_protocol
     data = request.json
     protocol = data.get("protocol")
     
@@ -416,11 +444,22 @@ def connect_drone():
         return jsonify({"status": "Invalid connection type"}), 400
 
     try:
-        connection = mavutil.mavlink_connection(device, baud=baudrate if protocol == 'serial' else None)
+        # NEW: Store connection details globally
+        global_device = device
+        global_baudrate = baudrate if protocol == 'serial' else None
+        global_protocol = protocol
+
+        # NEW: Use MAVLink class for more control
+        connection = mavutil.mavlink_connection(device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+        mav = mavlink2.MAVLink(connection)
+        mav.srcSystem = 255
+        mav.srcComponent = 0
+
         connection.wait_heartbeat(timeout=10)
         home_position_set = False
         request_data_streams()
         threading.Thread(target=fetch_drone_data, daemon=True).start()
+        threading.Thread(target=send_heartbeat, daemon=True).start()  # NEW: Start heartbeat thread
         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
     except Exception as e:
         return jsonify({"status": f"Failed to connect: {str(e)}"}), 500
@@ -438,19 +477,45 @@ def disconnect_drone():
 message_queue = Queue()
 
 
+# NEW: Heartbeat function
+def send_heartbeat():
+    while True:
+        if connection and mav:
+            try:
+                mav.heartbeat_send(
+                    mavutil.mavlink.MAV_TYPE_GCS,
+                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+                    0, 0, 0
+                )
+            except Exception as e:
+                logger.error(f"Error sending heartbeat: {e}")
+        time.sleep(1)
+
+
+
+def reconnect_drone():
+    global connection, mav
+    if connection:
+        connection.close()
+    try:
+        connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+        mav = mavlink2.MAVLink(connection)
+        mav.srcSystem = 255
+        mav.srcComponent = 0
+        connection.wait_heartbeat(timeout=10)
+        request_data_streams()
+    except Exception as e:
+        logger.error(f"Failed to reconnect: {str(e)}")
+
 def fetch_drone_data():
     global connection, drone_status
     while True:
         if connection:
             try:
                 msg = connection.recv_match(blocking=True, timeout=1)
-                if msg:
-                    if msg.get_type() != 'BAD_DATA':
-                        logger.debug(f"Received message: {msg.get_type()}")
-                        update_drone_status(msg)
-                        message_queue.put(decode_mavlink_message(msg))
-                else:
-                    logger.warning("No message received")
+                if msg and msg.get_type() != 'BAD_DATA':
+                    update_drone_status(msg)
+                    process_mavlink_message(msg)
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
                 drone_status["connection_status"] = "Error"
@@ -459,8 +524,10 @@ def fetch_drone_data():
             reset_telemetry_values()
             time.sleep(1)
 
+
+
 def set_mode(mode):
-    if connection:
+    if connection and mav:  # NEW: Check if mav object exists
         if mode not in connection.mode_mapping():
             print(f'Unknown mode : {mode}')
             print(f'Try:', list(connection.mode_mapping().keys()))
@@ -472,6 +539,32 @@ def set_mode(mode):
             mode_id
         )
     return False
+
+
+@app.route('/full_parameters', methods=['GET'])
+def get_full_parameters():
+    if not connection:
+        return jsonify({"error": "No active connection"}), 400
+
+    connection.mav.param_request_list_send(connection.target_system, connection.target_component)
+    
+    start = time.time()
+    param_list = []
+    while time.time() - start < 30:  # Wait for up to 30 seconds
+        msg = connection.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
+        if msg:
+            param_list.append({
+                'name': msg.param_id,
+                'value': msg.param_value,
+                'type': msg.param_type,
+            })
+        else:
+            break  # No more parameters
+
+    return jsonify({"parameters": param_list})
+
+
+
 
 @app.route('/command', methods=['POST'])
 def command():
@@ -505,11 +598,22 @@ def command():
 
 
 @app.route('/messages', methods=['GET'])
-def get_messages():
-    messages = []
-    while not message_queue.empty():
-        messages.append(message_queue.get())
-    return jsonify(messages)
+def get_ap_messages():
+    with ap_messages_lock:
+        return jsonify(list(ap_messages))
+
+
+@app.route('/ap_messages/clear', methods=['POST'])
+def clear_ap_messages():
+    with ap_messages_lock:
+        ap_messages.clear()
+    return jsonify({"status": "AP messages cleared"}), 200
+
+
+
+# Update the logging configuration
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 @app.route('/com_ports', methods=['GET'])
 def get_com_ports():
