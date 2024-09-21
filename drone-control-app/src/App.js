@@ -27,13 +27,11 @@ const styles = {
   },
 };
 
-
 const mapStyles = {
   height: '400px',
   width: '100%',
   marginBottom: '15px',
 };
-
 
 const Card = ({ children, title }) => (
   <div style={styles.card}>
@@ -117,8 +115,6 @@ const DroneControl = () => {
     return () => clearInterval(interval);
   }, [fetchMessages]);
 
-
-
   const MapEvents = () => {
     useMapEvents({
       click(e) {
@@ -137,8 +133,6 @@ const DroneControl = () => {
       }
     }
   }, [status.gps, mapCenter]);
-
-
 
   useEffect(() => {
     if (isConnected) {
@@ -235,7 +229,9 @@ const DroneControl = () => {
   };
 
   const handleArm = () => sendCommand('arm');
+
   const handleDisarm = () => sendCommand('disarm');
+
   const handleTakeoff = () => {
     if (takeoffAltitude > 0) {
       sendCommand('takeoff', { altitude: takeoffAltitude });
@@ -243,7 +239,9 @@ const DroneControl = () => {
       setCommandStatus('Please set a valid takeoff altitude');
     }
   };
+
   const handleLand = () => sendCommand('land');
+
   const handleRTL = () => sendCommand('rtl');
 
 
@@ -302,6 +300,7 @@ const DroneControl = () => {
       <Card title="Control Commands">
         <button style={styles.button} onClick={handleArm}>Arm</button>
         <button style={styles.button} onClick={handleDisarm}>Disarm</button>
+
         <input
           style={styles.input}
           type="number"
@@ -309,8 +308,10 @@ const DroneControl = () => {
           onChange={(e) => setTakeoffAltitude(Number(e.target.value))}
           placeholder="Takeoff Altitude (m)"
         />
+
         <button style={styles.button} onClick={handleTakeoff}>Takeoff</button>
         <button style={styles.button} onClick={handleLand}>Land</button>
+        
         <button style={styles.button} onClick={handleRTL}>RTL</button>
         <button style={styles.button} onClick={handleSetHome}>Set Home</button>
         <button style={styles.button} onClick={handleGoTo}>Go To Selected</button>

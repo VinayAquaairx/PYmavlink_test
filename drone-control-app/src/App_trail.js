@@ -112,9 +112,6 @@ const Alert = ({ children }) => (
   </div>
 );
 
-
-
-
 const ParameterList = ({ isOpen, onClose }) => {
   const [parameters, setParameters] = useState([]);
   const [loading, setLoading] = useState(true);
@@ -374,7 +371,7 @@ const DroneControlPanel = () => {
     ));
   };
 
-    const handleStartMission = async () => {
+  const handleStartMission = async () => {
     try {
       const response = await axios.post('http://localhost:5001/mission', { waypoints });
       if (response.data.status === 'Mission started successfully') {
@@ -451,7 +448,8 @@ const DroneControlPanel = () => {
       >
         Return to Launch
       </Button>
-    <button 
+
+      <button 
         onClick={handleCheckFullParams}
         className="check-params-button"
       >
@@ -462,6 +460,7 @@ const DroneControlPanel = () => {
         isOpen={showParameterList} 
         onClose={() => setShowParameterList(false)} 
       />
+
       <div className="mode-selector">
         <label htmlFor="mode-select">Flight Mode: </label>
         <select
