@@ -91,7 +91,7 @@ const missionItemTypes = {
       name: 'Region of Interest',
       params: ['ROI Mode', 'WP Index', 'ROI Index']
     },
-  };
+};
 
 const Modal = ({ isOpen, onClose, title, children }) => {
   if (!isOpen) return null;
@@ -193,9 +193,6 @@ const DroneControlPanel = () => {
     setShowParameterList(true);
   };
 
-
-
-
   const modeMap = {
     0: 'STABILIZE',
     1: 'ACRO',
@@ -226,13 +223,11 @@ const DroneControlPanel = () => {
     27: 'AUTO_RTL',
   };
 
-
   const handleModeChange = async (event) => {
     const newMode = event.target.value;
     setSelectedMode(newMode);
     await handleCommand('set_mode', { mode: newMode });
   };
-
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -254,7 +249,6 @@ const DroneControlPanel = () => {
 
     return () => clearInterval(intervalId);
   }, []);
-
 
   useEffect(() => {
     const fetchStatus = async () => {
@@ -278,8 +272,6 @@ const DroneControlPanel = () => {
   
     return () => clearInterval(intervalId);
   }, []);
-
-
 
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
