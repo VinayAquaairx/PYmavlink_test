@@ -448,10 +448,7 @@ const DroneControlPanel = () => {
         Check Full Parameter List
       </button>
 
-      <ParameterList 
-        isOpen={showParameterList} 
-        onClose={() => setShowParameterList(false)} 
-      />
+      <ParameterList isOpen={showParameterList} onClose={() => setShowParameterList(false)} />
 
       <div className="mode-selector">
         <label htmlFor="mode-select">Flight Mode: </label>
@@ -485,6 +482,7 @@ const DroneControlPanel = () => {
           >
             Start Mission
           </Button>
+
           <Button
             onClick={() => setWaypoints([])}
             className="clear-mission-button"
@@ -523,19 +521,20 @@ const DroneControlPanel = () => {
           style={{ height: '400px', width: '100%' }}
           ref={mapRef}
         >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
+
           <MapEvents />
+
           <Marker position={dronePosition} icon={droneIcon}>
             <Popup>Drone Location</Popup>
           </Marker>
+
           {homePosition && (
             <Marker position={homePosition} icon={homeIcon}>
               <Popup>Home Location</Popup>
             </Marker>
           )}
+
           {tempMarker && (
             <Marker position={tempMarker}>
               <Popup>
@@ -543,6 +542,7 @@ const DroneControlPanel = () => {
               </Popup>
             </Marker>
           )}
+
           {waypoints.map((waypoint, index) => (
             <Marker
               key={waypoint.id}
@@ -554,15 +554,16 @@ const DroneControlPanel = () => {
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
                 <div>
-                  Alt: 
+                  Altitude: 
                   <input
                     type="number"
                     value={waypoint.altitude}
                     onChange={(e) => handleUpdateWaypoint(index, 'altitude', parseFloat(e.target.value))}
                   />
                 </div>
+
                 <div>
-                  Type: 
+                  Command Type: 
                   <select
                     value={waypoint.type}
                     onChange={(e) => handleUpdateWaypoint(index, 'type', e.target.value)}
@@ -572,7 +573,9 @@ const DroneControlPanel = () => {
                     ))}
                   </select>
                 </div>
+
                 {renderWaypointParams(waypoint, index)}
+
                 <div>
                   Distance: {calculateDistance(
                     index === 0 ? dronePosition : waypoints[index-1],
@@ -590,12 +593,17 @@ const DroneControlPanel = () => {
         {waypoints.map((waypoint, index) => (
           <div key={waypoint.id} className="waypoint-item">
             <span>{index + 1}: {missionItemTypes[waypoint.type].name}</span>
+
             <span>Lat: {waypoint.lat.toFixed(6)}</span>
+
             <span>Lon: {waypoint.lng.toFixed(6)}</span>
+
             <span>Alt: {waypoint.altitude}m</span>
+
             {Object.entries(waypoint.params).map(([param, value]) => (
               <span key={param}>{param}: {value}</span>
             ))}
+
             <Button
               onClick={() => {
                 const newWaypoints = waypoints.filter((_, i) => i !== index);
