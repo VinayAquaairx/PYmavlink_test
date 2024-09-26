@@ -1,33 +1,33 @@
 import React, { useState, useEffect } from 'react';
-import { MapContainer, TileLayer, Marker, Popup, useMapEvents } from 'react-leaflet';
-import L from 'leaflet';
+import { MapContainer, TileLayer, useMapEvents, Marker, Popup } from 'react-leaflet';
 import 'leaflet/dist/leaflet.css';
 import axios from 'axios';
 
 const DroneMap = () => {
   const [position, setPosition] = useState(null);
+  const [altitude, setAltitude] = useState('');
   const [homePosition, setHomePosition] = useState(null);
-  const [menuPosition, setMenuPosition] = useState(null); // State to handle context menu position
-  const [showMenu, setShowMenu] = useState(false); // State to show/hide the context menu
 
-  const MapEvents = () => {
-    const map = useMapEvents({
-      contextmenu: (e) => {
-        // Handle right-click to open context menu
-        setMenuPosition(e.latlng);
-        setShowMenu(true);
-        e.originalEvent.preventDefault(); // Prevent the default context menu
-      }
+  const MapClickHandler = () => {
+    useMapEvents({
+      click: (e) => {
+        setPosition([e.latlng.lat, e.latlng.lng]);
+      },
     });
     return null;
   };
 
-  const handleSendPosition = async (altitude) => {
-    if (menuPosition && altitude) {
+  const handleAltitudeChange = (e) => {
+    setAltitude(e.target.value);
+  };
+
+  const handleSendPosition = async () => {
+    if (position && altitude) {
+      const [latitude, longitude] = position;
       try {
         const response = await axios.post('http://localhost:5001/set_position', {
-          latitude: menuPosition.lat,
-          longitude: menuPosition.lng,
+          latitude,
+          longitude,
           altitude: parseFloat(altitude),
         });
         alert('Drone repositioned successfully');
@@ -55,28 +55,28 @@ const DroneMap = () => {
   }, []);
 
   return (
-    <div>
-      <h3>Drone Repositioning</h3>
-      <MapContainer center={[51.505, -0.09]} zoom={13} style={{ height: '400px', width: '100%' }}>
+    <div className="container mx-auto p-4">
+      <h1 className="text-2xl font-bold mb-4">Drone Repositioning</h1>
+      <MapContainer center={[0, 0]} zoom={3} style={{ height: '400px', width: '100%' }}>
         <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" />
-        {homePosition && <Marker position={homePosition} />}
-        <MapEvents />
+        <MapClickHandler />
+        {homePosition && (
+          <Marker position={homePosition}>
+            <Popup>Home Position</Popup>
+          </Marker>
+        )}
+        {position && (
+          <Marker position={position}>
+            <Popup>
+              <div>
+                <p>New Position</p>
+                <input type="number" value={altitude} onChange={handleAltitudeChange} placeholder="Enter altitude (m)" className="mb-2 p-1 border rounded"/>
+                <button onClick={handleSendPosition}className="bg-blue-500 text-white px-2 py-1 rounded"> Go to this position</button>
+              </div>
+            </Popup>
+          </Marker>
+        )}
       </MapContainer>
-      {showMenu && (
-        <div style={{ position: 'absolute', top: menuPosition.y, left: menuPosition.x }}>
-          <div style={{ background: 'white', padding: '10px', borderRadius: '5px', boxShadow: '0 0 15px rgba(0,0,0,0.2)' }}>
-            <ul style={{ listStyle: 'none', margin: 0, padding: 0 }}>
-              <li>
-                <button onClick={() => {
-                  const altitude = prompt('Enter altitude:');
-                  if (altitude) handleSendPosition(altitude);
-                  setShowMenu(false);
-                }}>Go to this position</button>
-              </li>
-            </ul>
-          </div>
-        </div>
-      )}
     </div>
   );
 };

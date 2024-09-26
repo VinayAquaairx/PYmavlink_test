@@ -9,8 +9,8 @@ import Repostion from './reposition'
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    {/* <App_trail/> */}
-    <Repostion />
+    <App_trail/>
+    {/* <Repostion /> */}
   </React.StrictMode>
 );
 
