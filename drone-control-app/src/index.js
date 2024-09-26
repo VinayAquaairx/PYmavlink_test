@@ -4,11 +4,13 @@ import './index.css';
 import App from './App';
 import App_trail from './App_trail' 
 import reportWebVitals from './reportWebVitals';
+import Repostion from './reposition'
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App_trail/>
+    {/* <App_trail/> */}
+    <Repostion />
   </React.StrictMode>
 );
 

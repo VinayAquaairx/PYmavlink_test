@@ -19,19 +19,12 @@ const droneIcon = new L.Icon({
 
 // Custom icon for home location
 const homeIcon = new L.Icon({
-  iconUrl: IoIosHome,
-  iconRetinaUrl: IoIosHome,
-  iconSize: [25, 25],
-  iconAnchor: [12, 12],
+  iconUrl: IoIosHome,iconRetinaUrl: IoIosHome,iconSize: [25, 25],iconAnchor: [12, 12],
 });
 
 // Custom icon for waypoints
 const waypointIcon = new L.Icon({
-  iconUrl: FaLocationDot,
-  iconRetinaUrl: FaLocationDot,
-  iconSize: [25, 25],
-  iconAnchor: [12, 12],
-  iconColor: 'red',
+  iconUrl: FaLocationDot,iconRetinaUrl: FaLocationDot,iconSize: [25, 25],iconAnchor: [12, 12],iconColor: 'red',
 });
 
 const Button = ({ onClick, className, children }) => (
@@ -41,56 +34,21 @@ const Button = ({ onClick, className, children }) => (
 );
 
 const Input = ({ type, value, onChange, placeholder }) => (
-  <input
-    type={type}
-    value={value}
-    onChange={onChange}
-    placeholder={placeholder}
-    className="input"
+  <input type={type} value={value} onChange={onChange} placeholder={placeholder} className="input"
   />
 );
 
 const missionItemTypes = {
-    WAYPOINT: { 
-      name: 'Waypoint',
-      params: ['Delay', 'Acceptance Radius', 'Pass Radius', 'Yaw Angle']
-    },
-    LOITER_UNLIMITED: { 
-      name: 'Loiter Unlimited',
-      params: ['Radius', 'Yaw', 'Direction']
-    },
-    LOITER_TIME: { 
-      name: 'Loiter Time',
-      params: ['Time', 'Radius', 'Yaw', 'Direction']
-    },
-    LOITER_TURNS: { 
-      name: 'Loiter Turns',
-      params: ['Turns', 'Radius', 'Yaw', 'Direction']
-    },
-    RETURN_TO_LAUNCH: { 
-      name: 'Return to Launch',
-      params: []
-    },
-    LAND: { 
-      name: 'Land',
-      params: ['Abort Alt', 'Precision Land']
-    },
-    TAKEOFF: { 
-      name: 'Takeoff',
-      params: ['Pitch Angle', 'Yaw Angle']
-    },
-    DO_CHANGE_SPEED: { 
-      name: 'Change Speed',
-      params: ['Speed Type', 'Speed', 'Throttle']
-    },
-    DO_SET_CAM_TRIGG_DIST: { 
-      name: 'Camera Trigger Distance',
-      params: ['Distance', 'Shutter', 'Trigger']
-    },
-    DO_SET_ROI: { 
-      name: 'Region of Interest',
-      params: ['ROI Mode', 'WP Index', 'ROI Index']
-    },
+    WAYPOINT: { name: 'Waypoint',params: ['Delay', 'Acceptance Radius', 'Pass Radius', 'Yaw Angle']},
+    LOITER_UNLIMITED: {  name: 'Loiter Unlimited',params: ['Radius', 'Yaw', 'Direction']},
+    LOITER_TIME: { name: 'Loiter Time',params: ['Time', 'Radius', 'Yaw', 'Direction']},
+    LOITER_TURNS: { name: 'Loiter Turns',params: ['Turns', 'Radius', 'Yaw', 'Direction']},
+    RETURN_TO_LAUNCH: { name: 'Return to Launch',params: []},
+    LAND: { name: 'Land',params: ['Abort Alt', 'Precision Land']},
+    TAKEOFF: { name: 'Takeoff',params: ['Pitch Angle', 'Yaw Angle']},
+    DO_CHANGE_SPEED: { name: 'Change Speed',params: ['Speed Type', 'Speed', 'Throttle']},
+    DO_SET_CAM_TRIGG_DIST: { name: 'Camera Trigger Distance',params: ['Distance', 'Shutter', 'Trigger']},
+    DO_SET_ROI: { name: 'Region of Interest',params: ['ROI Mode', 'WP Index', 'ROI Index']},
 };
 
 const Modal = ({ isOpen, onClose, title, children }) => {
@@ -112,65 +70,6 @@ const Alert = ({ children }) => (
   </div>
 );
 
-const ParameterList = ({ isOpen, onClose }) => {
-  const [parameters, setParameters] = useState([]);
-  const [loading, setLoading] = useState(true);
-
-  useEffect(() => {
-    if (isOpen) {
-      fetchParameters();
-    }
-  }, [isOpen]);
-
-  const fetchParameters = async () => {
-    try {
-      const response = await axios.get('http://localhost:5001/full_parameters');
-      // Sort the parameters alphabetically by name
-      const sortedParameters = response.data.parameters.sort((a, b) => 
-        a.name.localeCompare(b.name)
-      );
-      setParameters(sortedParameters);
-      setLoading(false);
-    } catch (error) {
-      console.error('Error fetching parameters:', error);
-      setLoading(false);
-    }
-  };
-
-  if (!isOpen) return null;
-
-  return (
-    <div className="parameter-list-modal">
-      <div className="parameter-list-content">
-        <h2>Full Parameter List</h2>
-        {loading ? (
-          <p>Loading parameters...</p>
-        ) : (
-          <table className="parameter-table">
-            <thead>
-              <tr>
-                <th>Parameter Name</th>
-                <th>Value</th>
-                <th>Type</th>
-              </tr>
-            </thead>
-            <tbody>
-              {parameters.map((param, index) => (
-                <tr key={index}>
-                  <td>{param.name}</td>
-                  <td>{param.value}</td>
-                  <td>{param.type}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        )}
-        <button className="close-button" onClick={onClose}>Close</button>
-      </div>
-    </div>
-  );
-};
-
 const DroneControlPanel = () => {
   const [droneStatus, setDroneStatus] = useState({});
   const [isArmed, setIsArmed] = useState(false);
@@ -184,14 +83,11 @@ const DroneControlPanel = () => {
   const [waypoints, setWaypoints] = useState([]);
   const [missionMode, setMissionMode] = useState(false);
   const [selectedMode, setSelectedMode] = useState('');
+  const [parameters, setParameters] = useState([]);
   const [showParameterList, setShowParameterList] = useState(false);
-
+  const [isLoadingParameters, setIsLoadingParameters] = useState(false);
 
   const mapRef = useRef();
-
-  const handleCheckFullParams = () => {
-    setShowParameterList(true);
-  };
 
   const modeMap = {
     0: 'STABILIZE',
@@ -222,35 +118,14 @@ const DroneControlPanel = () => {
     26: 'AUTOROTATE',
     27: 'AUTO_RTL',
   };
-
   const handleModeChange = async (event) => {
     const newMode = event.target.value;
     setSelectedMode(newMode);
     await handleCommand('set_mode', { mode: newMode });
   };
 
-  useEffect(() => {
-    const fetchStatus = async () => {
-      try {
-        const response = await axios.get('http://localhost:5001/status');
-        setDroneStatus(response.data);
-        setIsArmed(response.data.armed === 128);
-        setModeName(modeMap[response.data.mav_mode] || 'Unknown');
-        if (response.data.gps) {
-          setDronePosition([response.data.gps.lat, response.data.gps.lon]);
-        }
-      } catch (error) {
-        console.error('Error fetching drone status:', error);
-      }
-    };
 
-    fetchStatus();
-    const intervalId = setInterval(fetchStatus, 1000);
-
-    return () => clearInterval(intervalId);
-  }, []);
-
-  useEffect(() => {
+useEffect(() => {
     const fetchStatus = async () => {
       try {
         const response = await axios.get('http://localhost:5001/status');
@@ -266,12 +141,13 @@ const DroneControlPanel = () => {
         console.error('Error fetching drone status:', error);
       }
     };
-  
+
     fetchStatus();
     const intervalId = setInterval(fetchStatus, 1000);
-  
+
     return () => clearInterval(intervalId);
   }, []);
+
 
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
@@ -299,11 +175,12 @@ const DroneControlPanel = () => {
     setShowAltitudeModal(true);
   };
 
+
   const handleAltitudeSubmit = () => {
     setShowAltitudeModal(false);
     handleCommand('takeoff', { altitude: parseFloat(altitude) });
   };
-
+  
   const handleSetHomeLocation = () => {
     if (tempMarker) {
       handleCommand('set_home', {
@@ -318,17 +195,9 @@ const DroneControlPanel = () => {
 
   const handleAddWaypoint = (latlng) => {
     const newWaypoint = {
-      id: Date.now(),
-      lat: latlng.lat,
-      lng: latlng.lng,
-      altitude: 10,
-      type: 'WAYPOINT',
+      id: Date.now(),lat: latlng.lat,lng: latlng.lng,altitude: 10,type: 'WAYPOINT',
       params: {
-        Delay: 0,
-        'Acceptance Radius': 5,
-        'Pass Radius': 0,
-        'Yaw Angle': 0
-      }
+        Delay: 0,'Acceptance Radius': 5,'Pass Radius': 0,'Yaw Angle': 0}
     };
     setWaypoints([...waypoints, newWaypoint]);
   };
@@ -354,11 +223,7 @@ const DroneControlPanel = () => {
     return missionItemTypes[waypoint.type].params.map(param => (
       <div key={param}>
         {param}:
-        <input
-          type="number"
-          value={waypoint.params[param]}
-          onChange={(e) => handleUpdateWaypoint(index, `param_${param}`, parseFloat(e.target.value))}
-        />
+        <input type="number" value={waypoint.params[param]}  onChange={(e) => handleUpdateWaypoint(index, `param_${param}`, parseFloat(e.target.value))} />
       </div>
     ));
   };
@@ -403,6 +268,95 @@ const DroneControlPanel = () => {
     });
     return null;
   };
+  const fetchParameters = async () => {
+    setIsLoadingParameters(true);
+    try {
+      const response = await axios.get('http://localhost:5001/fetch_parameters');
+      if (response.data.status === 'Requesting parameters') {
+        pollParameters();
+      }
+    } catch (error) {
+      console.error('Error fetching parameters:', error);
+      setAlertMessage('Failed to fetch parameters');
+      setIsLoadingParameters(false);
+    }
+  };
+
+  const pollParameters = async () => {
+    const interval = setInterval(async () => {
+      try {
+        const response = await axios.get('http://localhost:5001/get_parameters');
+        if (response.data.length > 0) {
+          setParameters(prevParams => [...prevParams, ...response.data]);
+        } else {
+          clearInterval(interval);
+          setIsLoadingParameters(false);
+        }
+      } catch (error) {
+        console.error('Error polling parameters:', error);
+        clearInterval(interval);
+        setIsLoadingParameters(false);
+      }
+    }, 1000);
+  };
+
+  const handleCheckFullParams = () => {
+    setShowParameterList(true);
+    fetchParameters();
+  };
+
+  const ParameterList = ({ isOpen, onClose }) => {
+    const listRef = useRef(null);
+    const [scrollPosition, setScrollPosition] = useState(0);
+
+    useEffect(() => {
+      if (listRef.current) {
+        listRef.current.scrollTop = scrollPosition;
+      }
+    }, [parameters, scrollPosition]);
+
+    const handleScroll = () => {
+      if (listRef.current) {
+        setScrollPosition(listRef.current.scrollTop);
+      }
+    };
+
+    if (!isOpen) return null;
+
+    return (
+      <div className="parameter-list-modal">
+        <div className="parameter-list-content">
+          <h2>Full Parameter List</h2>
+          <div 
+            ref={listRef} 
+            onScroll={handleScroll} 
+            className="parameter-table-container"
+            style={{maxHeight: '70vh', overflowY: 'auto'}}
+          >
+            {isLoadingParameters ? (
+              <div className="loading-spinner">
+                <div className="spinner"></div>
+                <p>Fetching parameters...</p>
+              </div>
+            ) : (
+              <table className="parameter-table">
+                <thead>
+                  <tr>
+                    <th>Parameter Name</th>
+                    <th>Value</th>
+                  </tr>
+                </thead>
+                <tbody>{parameters.map((param, index) => (<tr key={index}><td>{param.param_id}</td> <td>{param.param_value}</td></tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+          <button className="close-button" onClick={onClose}>Close</button>
+        </div>
+      </div>
+    );
+  };
 
   return (
     <div className="drone-control-panel">
@@ -440,16 +394,17 @@ const DroneControlPanel = () => {
       >
         Return to Launch
       </Button>
-
-      <button 
+    <button 
         onClick={handleCheckFullParams}
         className="check-params-button"
       >
         Check Full Parameter List
       </button>
 
-      <ParameterList isOpen={showParameterList} onClose={() => setShowParameterList(false)} />
-
+      <ParameterList 
+        isOpen={showParameterList} 
+        onClose={() => setShowParameterList(false)} 
+      />
       <div className="mode-selector">
         <label htmlFor="mode-select">Flight Mode: </label>
         <select
@@ -482,7 +437,6 @@ const DroneControlPanel = () => {
           >
             Start Mission
           </Button>
-
           <Button
             onClick={() => setWaypoints([])}
             className="clear-mission-button"
@@ -521,20 +475,19 @@ const DroneControlPanel = () => {
           style={{ height: '400px', width: '100%' }}
           ref={mapRef}
         >
-          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"/>
-
+          <TileLayer
+            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
+            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+          />
           <MapEvents />
-
           <Marker position={dronePosition} icon={droneIcon}>
             <Popup>Drone Location</Popup>
           </Marker>
-
           {homePosition && (
             <Marker position={homePosition} icon={homeIcon}>
               <Popup>Home Location</Popup>
             </Marker>
           )}
-
           {tempMarker && (
             <Marker position={tempMarker}>
               <Popup>
@@ -542,7 +495,6 @@ const DroneControlPanel = () => {
               </Popup>
             </Marker>
           )}
-
           {waypoints.map((waypoint, index) => (
             <Marker
               key={waypoint.id}
@@ -554,16 +506,15 @@ const DroneControlPanel = () => {
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
                 <div>
-                  Altitude: 
+                  Alt: 
                   <input
                     type="number"
                     value={waypoint.altitude}
                     onChange={(e) => handleUpdateWaypoint(index, 'altitude', parseFloat(e.target.value))}
                   />
                 </div>
-
                 <div>
-                  Command Type: 
+                  Type: 
                   <select
                     value={waypoint.type}
                     onChange={(e) => handleUpdateWaypoint(index, 'type', e.target.value)}
@@ -573,9 +524,7 @@ const DroneControlPanel = () => {
                     ))}
                   </select>
                 </div>
-
                 {renderWaypointParams(waypoint, index)}
-
                 <div>
                   Distance: {calculateDistance(
                     index === 0 ? dronePosition : waypoints[index-1],
@@ -593,17 +542,12 @@ const DroneControlPanel = () => {
         {waypoints.map((waypoint, index) => (
           <div key={waypoint.id} className="waypoint-item">
             <span>{index + 1}: {missionItemTypes[waypoint.type].name}</span>
-
             <span>Lat: {waypoint.lat.toFixed(6)}</span>
-
             <span>Lon: {waypoint.lng.toFixed(6)}</span>
-
             <span>Alt: {waypoint.altitude}m</span>
-
             {Object.entries(waypoint.params).map(([param, value]) => (
               <span key={param}>{param}: {value}</span>
             ))}
-
             <Button
               onClick={() => {
                 const newWaypoints = waypoints.filter((_, i) => i !== index);

@@ -322,12 +322,13 @@ const DroneControl = () => {
 
       <Card title="Notifications">
         <div style={styles.notificationBox}>
-          {messages.map((message, index) => (
-            <div key={index}>{message}</div>
-          ))}
+        {messages.map((message, index) => (
+  <div key={index}>
+    {typeof message === 'object' ? `${message.severity}: ${message.text}` : message}
+  </div>
+))}
         </div>
       </Card>
-
 
 
       <div style={styles.grid}>

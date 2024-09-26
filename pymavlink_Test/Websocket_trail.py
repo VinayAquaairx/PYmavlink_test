@@ -20,45 +20,21 @@ connection = None
 mav = None
 home_position_set = False
 home_coordinates = {"lat": None, "lon": None, "alt": None}
+parameters = {}  # NEW: Dictionary to store all parameters
+param_queue = Queue()
+last_heartbeat_time = 0
+packet_count = 0
+total_packets = 0
+connection_quality = 0
+
 drone_status = {
-    "connection_status": "Disconnected",
-    "system_id": None,
-    "component_id": None,
-    "firmware_type": None,
-    "vehicle_type": None,
-    "battery_status": {},
-    "gps": None,
-    "satellite_count": None,
-    "hdop": None,
-    "gps_fix_type": None,
-    "armed": False,
-    "firmware_version": None,
-    "board_version": None,
-    "rssi_dBm": None,
-    "remrssi_dBm": None,
-    "channel_outputs": {},
-    "distance_to_home": None,
-    "rangefinder": {},
-    "rx_errors": None,
-    "tx_buffer": None,
-    "local_noise": None,
-    "remote_noise": None,
-    "attitude": {
-        "pitch": None,
-        "yaw": None,
-        "roll": None
-    },
-    "groundspeed": None,
-    "airspeed": None,
-    "heading": None,
-    "mav_mode": None,
-    "mav_landed_state": None 
+    "connection_status": "Disconnected","system_id": None,"component_id": None,"firmware_type": None,"vehicle_type": None,"battery_status": {},"gps": None,"satellite_count": None,"hdop": None,"gps_fix_type": None,
+    "armed": False,"firmware_version": None,"board_version": None,"rssi_dBm": None,"remrssi_dBm": None,"channel_outputs": {},"distance_to_home": None,"rangefinder": {},"rx_errors": None,"tx_buffer": None,
+    "local_noise": None,"remote_noise": None,"attitude": {"pitch": None,"yaw": None,"roll": None},"groundspeed": None,"airspeed": None,"heading": None,"mav_mode": None,"mav_landed_state": None 
 }
 
 logging.basicConfig(level=logging.DEBUG)
 logger = logging.getLogger(__name__)
-
-
 
 global_device = None
 global_baudrate = None
@@ -105,10 +81,7 @@ def update_drone_status(msg):
 
     elif msg_type == 'BATTERY_STATUS':
         drone_status['battery_status'] = {
-            "voltage": msg.voltages[0] / 1000.0,
-            "current": msg.current_battery / 100.0,
-            "battery_remaining": msg.battery_remaining,
-            "capacity_consumed": msg.current_consumed
+            "voltage": msg.voltages[0] / 1000.0,"current": msg.current_battery / 100.0,"battery_remaining": msg.battery_remaining,"capacity_consumed": msg.current_consumed
         }
 
     elif msg_type == 'GPS_RAW_INT':
@@ -118,10 +91,7 @@ def update_drone_status(msg):
 
     elif msg_type == 'GLOBAL_POSITION_INT':
         drone_status['gps'] = {
-            "lat": msg.lat / 1e7,
-            "lon": msg.lon / 1e7,
-            "alt": msg.alt / 1000.0,
-            "relative_alt": msg.relative_alt / 1000.0
+            "lat": msg.lat / 1e7,"lon": msg.lon / 1e7,"alt": msg.alt / 1000.0,"relative_alt": msg.relative_alt / 1000.0
         }
 
         if not home_position_set:
@@ -135,22 +105,18 @@ def update_drone_status(msg):
         vz = msg.vz / 100.0
         drone_status['groundspeed'] = math.sqrt(vx**2 + vy**2)
         drone_status['airspeed'] = math.sqrt(vx**2 + vy**2 + vz**2)
-
     elif msg_type == 'ATTITUDE':
         drone_status['attitude'] = {
             "roll": math.degrees(msg.roll),
             "pitch": math.degrees(msg.pitch),
             "yaw": math.degrees(msg.yaw)
         }
-
     elif msg_type == 'VFR_HUD':
         drone_status['heading'] = msg.heading
 
     elif msg_type == 'DISTANCE_SENSOR':
         drone_status['rangefinder'] = {
-            "distance": msg.current_distance / 100.0,
-            "min_distance": msg.min_distance / 100.0,
-            "max_distance": msg.max_distance / 100.0,
+            "distance": msg.current_distance / 100.0,"min_distance": msg.min_distance / 100.0,"max_distance": msg.max_distance / 100.0,
         }
 
     elif msg_type == 'AUTOPILOT_VERSION':
@@ -162,9 +128,8 @@ def update_drone_status(msg):
 
     elif msg_type == 'SERVO_OUTPUT_RAW':
         drone_status['channel_outputs'] = {f"ch{i+1}_output": getattr(msg, f'servo{i+1}_raw') for i in range(8)}
-
-
-
+    elif msg_type == 'PARAM_VALUE':  # Handle PARAM_VALUE messages
+        parameters[msg.param_id] = msg.param_value
 
 def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
     if connection and mav:  # NEW: Check if mav object exists
@@ -180,41 +145,16 @@ def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0,
 
 
 def reset_telemetry_values():
+    global drone_status, packet_count, total_packets, connection_quality
     drone_status.update({
-        "connection_status": "Disconnected",
-    "system_id": None,
-    "component_id": None,
-    "firmware_type": None,
-    "vehicle_type": None,
-    "battery_status": {},
-    "gps": None,
-    "satellite_count": None,
-    "hdop": None,
-    "gps_fix_type": None,
-    "armed": False,
-    "firmware_version": None,
-    "board_version": None,
-    "rssi_dBm": None,
-    "remrssi_dBm": None,
-    "channel_outputs": {},
-    "distance_to_home": None,
-    "rangefinder": {},
-    "rx_errors": None,
-    "tx_buffer": None,
-    "local_noise": None,
-    "remote_noise": None,
-    "attitude": {
-        "pitch": None,
-        "yaw": None,
-        "roll": None
-    },
-    "groundspeed": None,
-    "airspeed": None,
-    "heading": None,
-    "mav_mode": None,
-    "mav_landed_state": None 
+    "connection_status": "Disconnected",
+    "system_id": None,"component_id": None,"firmware_type": None,"vehicle_type": None,"battery_status": {},"gps": None,"satellite_count": None,"hdop": None,"gps_fix_type": None,"armed": False,
+    "firmware_version": None,"board_version": None,"rssi_dBm": None,"remrssi_dBm": None,"channel_outputs": {},"distance_to_home": None,"rangefinder": {},"rx_errors": None,"tx_buffer": None,"local_noise": None,
+    "remote_noise": None,"attitude": {"pitch": None,"yaw": None,"roll": None},"groundspeed": None,"airspeed": None,"heading": None,"mav_mode": None,"mav_landed_state": None 
     })
-
+    packet_count = 0
+    total_packets = 0
+    connection_quality = 0
 
 
 def calculate_distance_to_home():
@@ -229,13 +169,10 @@ def calculate_distance_to_home():
     return None
 
 
-
 # Create a queue for AP messages
-
 MAX_AP_MESSAGES = 1000 
 ap_messages = deque(maxlen=MAX_AP_MESSAGES)
 ap_messages_lock = threading.Lock()
-
 
 def process_mavlink_message(msg):
     if msg.get_type() == 'STATUSTEXT':
@@ -253,6 +190,21 @@ def process_mavlink_message(msg):
         cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
         print(cmd_message)
 
+# Modify existing connection logic (make sure the connection is set properly)
+def connect_to_drone(connection_string, baudrate=115200):
+    global connection, mav
+    try:
+        connection = mavutil.mavlink_connection(connection_string, baud=baudrate)
+        mav = mavutil.mavlink.MAVLink(connection, srcSystem=255, srcComponent=0)
+        connection.wait_heartbeat()
+        logger.info("Heartbeat received. Drone is online.")
+        request_data_streams()
+        return True
+    except Exception as e:
+        logger.error(f"Connection failed: {str(e)}")
+        return False
+    
+
 def request_data_streams():
      if connection and mav:
         mav.request_data_stream_send(
@@ -260,18 +212,7 @@ def request_data_streams():
             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
         )
         message_types = [
-            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,
-            mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,
-            mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,
-            mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
-            mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
-            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,
-            mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,
-            mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,
-            mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
-            mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,
-            mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
-            mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,
+            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,
             mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
         ]
         for msg_id in message_types:
@@ -286,92 +227,47 @@ def get_command_and_params(wp):
     params = wp['params']
 
     if wp_type == 'WAYPOINT':
-        return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,
-                params['Delay'],
-                params['Acceptance Radius'],
-                params['Pass Radius'],
-                params['Yaw Angle'])
+        return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT,params['Delay'],params['Acceptance Radius'],params['Pass Radius'],params['Yaw Angle'])
     elif wp_type == 'LOITER_UNLIMITED':
-        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,
-                params['Radius'],
-                0,  # Empty
-                params['Direction'],
-                params['Yaw'])
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_UNLIM,params['Radius'],0,params['Direction'],params['Yaw'])
     elif wp_type == 'LOITER_TIME':
-        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME,
-                params['Time'],
-                0,  # Empty
-                params['Radius'],
-                params['Yaw'])
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TIME, params['Time'], 0,params['Radius'],params['Yaw'])
     elif wp_type == 'LOITER_TURNS':
-        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS,
-                params['Turns'],
-                0,  # Empty
-                params['Radius'],
-                params['Yaw'])
+        return (mavutil.mavlink.MAV_CMD_NAV_LOITER_TURNS,params['Turns'],0,params['Radius'],params['Yaw'])
     elif wp_type == 'RETURN_TO_LAUNCH':
-        return (mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,
-                0, 0, 0, 0)
+        return (mavutil.mavlink.MAV_CMD_NAV_RETURN_TO_LAUNCH,0, 0, 0, 0)
     elif wp_type == 'LAND':
-        return (mavutil.mavlink.MAV_CMD_NAV_LAND,
-                params['Abort Alt'],
-                params['Precision Land'],
-                0, 0)
+        return (mavutil.mavlink.MAV_CMD_NAV_LAND,params['Abort Alt'],params['Precision Land'],0, 0)
     elif wp_type == 'TAKEOFF':
-        return (mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,
-                params['Pitch Angle'],
-                0, 0,
-                params['Yaw Angle'])
+        return (mavutil.mavlink.MAV_CMD_NAV_TAKEOFF,params['Pitch Angle'],0, 0,params['Yaw Angle'])
     elif wp_type == 'DO_CHANGE_SPEED':
-        return (mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED,
-                params['Speed Type'],
-                params['Speed'],
-                params['Throttle'],
-                0)
+        return (mavutil.mavlink.MAV_CMD_DO_CHANGE_SPEED, params['Speed Type'], params['Speed'],params['Throttle'],0)
     elif wp_type == 'DO_SET_CAM_TRIGG_DIST':
-        return (mavutil.mavlink.MAV_CMD_DO_SET_CAM_TRIGG_DIST,
-                params['Distance'],
-                0,
-                0,
-                0,
-                params['Shutter'],
-                params['Trigger'],
-                0)
+        return (mavutil.mavlink.MAV_CMD_DO_SET_CAM_TRIGG_DIST,params['Distance'],0,0,0,params['Shutter'],params['Trigger'],0)
     elif wp_type == 'DO_SET_ROI':
-        return (mavutil.mavlink.MAV_CMD_DO_SET_ROI,
-                params['ROI Mode'],
-                params['WP Index'],
-                params['ROI Index'],
-                0, 0, 0, 0)
+        return (mavutil.mavlink.MAV_CMD_DO_SET_ROI,params['ROI Mode'],params['WP Index'],params['ROI Index'],0, 0, 0, 0)
     else:
         logger.warning(f"Unknown waypoint type: {wp_type}")
         return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
 
-
-
-
 def upload_mission(waypoints):
     if not connection:
         return False
-
     # Clear any existing mission
     connection.mav.mission_clear_all_send(connection.target_system, connection.target_component)
     ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
     if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
         logger.error("Failed to clear existing mission")
         return False
-
     # Upload new mission
     connection.mav.mission_count_send(connection.target_system, connection.target_component, len(waypoints))
     for i, wp in enumerate(waypoints):
         msg = connection.recv_match(type=['MISSION_REQUEST'], blocking=True, timeout=5)
         if not msg:
             logger.error(f"Failed to receive MISSION_REQUEST for waypoint {i}")
-            return False
-        
+            return False 
         # Set command and parameters based on waypoint type
         command, param1, param2, param3, param4 = get_command_and_params(wp)
-
         connection.mav.mission_item_int_send(
             connection.target_system,
             connection.target_component,
@@ -379,12 +275,8 @@ def upload_mission(waypoints):
             mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
             command,
             0, 1,
-            param1, param2, param3, param4,
-            int(wp['lat'] * 1e7),
-            int(wp['lng'] * 1e7),
-            wp['altitude']
+            param1, param2, param3, param4,int(wp['lat'] * 1e7),int(wp['lng'] * 1e7),wp['altitude']
         )
-
     # Wait for mission acceptance
     ack = connection.recv_match(type='MISSION_ACK', blocking=True, timeout=5)
     if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
@@ -394,25 +286,18 @@ def upload_mission(waypoints):
     logger.info("Mission uploaded successfully")
     return True
 
-
-
 @app.route('/mission', methods=['POST'])
 def start_mission():
     waypoints = request.json['waypoints']
     
     if not connection:
         return jsonify({'status': 'No active connection'}), 400
-
     try:
-        # Upload mission
         if not upload_mission(waypoints):
             return jsonify({'status': 'Failed to upload mission'}), 500
-
-        # Set mode to AUTO
+        connection.mav.mission_request_list_send(connection.target_system, connection.target_component)
         if not set_mode('AUTO'):
             return jsonify({'status': 'Failed to set AUTO mode'}), 500
-
-        # Arm the drone
         if not send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1):
             return jsonify({'status': 'Failed to arm the drone'}), 500
 
@@ -425,11 +310,9 @@ def start_mission():
         logger.error(f"Error starting mission: {str(e)}")
         return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
     
-
-
 @app.route('/connect', methods=['POST'])
 def connect_drone():
-    global connection, home_position_set, mav, global_device, global_baudrate, global_protocol
+    global connection, home_position_set, mav, global_device, global_baudrate, global_protocol, last_heartbeat_time
     data = request.json
     protocol = data.get("protocol")
     
@@ -442,20 +325,17 @@ def connect_drone():
         device = f"{protocol}:{ip}:{port}"
     else:
         return jsonify({"status": "Invalid connection type"}), 400
-
     try:
         # NEW: Store connection details globally
         global_device = device
         global_baudrate = baudrate if protocol == 'serial' else None
         global_protocol = protocol
-
-        # NEW: Use MAVLink class for more control
         connection = mavutil.mavlink_connection(device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
         mav = mavlink2.MAVLink(connection)
         mav.srcSystem = 255
         mav.srcComponent = 0
-
         connection.wait_heartbeat(timeout=10)
+        last_heartbeat_time = time.time()
         home_position_set = False
         request_data_streams()
         threading.Thread(target=fetch_drone_data, daemon=True).start()
@@ -477,54 +357,98 @@ def disconnect_drone():
 message_queue = Queue()
 
 
-# NEW: Heartbeat function
 def send_heartbeat():
     while True:
         if connection and mav:
             try:
                 mav.heartbeat_send(
-                    mavutil.mavlink.MAV_TYPE_GCS,
-                    mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-                    0, 0, 0
-                )
+                    mavutil.mavlink.MAV_TYPE_GCS, mavutil.mavlink.MAV_AUTOPILOT_INVALID,0, 0, 0)
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
         time.sleep(1)
 
-
-
 def reconnect_drone():
-    global connection, mav
+    global connection, mav, last_heartbeat_time
     if connection:
         connection.close()
     try:
         connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-        mav = mavlink2.MAVLink(connection)
+        mav = mavutil.mavlink.MAVLink(connection)
         mav.srcSystem = 255
         mav.srcComponent = 0
         connection.wait_heartbeat(timeout=10)
+        last_heartbeat_time = time.time()
         request_data_streams()
+        logger.info("Reconnected to drone successfully")
     except Exception as e:
         logger.error(f"Failed to reconnect: {str(e)}")
 
 def fetch_drone_data():
-    global connection, drone_status
+    global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
+    heartbeat_timeout = 3
     while True:
         if connection:
             try:
                 msg = connection.recv_match(blocking=True, timeout=1)
-                if msg and msg.get_type() != 'BAD_DATA':
-                    update_drone_status(msg)
-                    process_mavlink_message(msg)
+                if msg:
+                    total_packets += 1
+                    if msg.get_type() != 'BAD_DATA':
+                        packet_count += 1
+                        update_drone_status(msg)
+                        process_mavlink_message(msg)
+                        if msg.get_type() == 'HEARTBEAT':
+                            last_heartbeat_time = time.time()
+                    connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
+                if time.time() - last_heartbeat_time > heartbeat_timeout:
+                    logger.warning("Heartbeat lost. Clearing drone status.")
+                    reset_telemetry_values()
+                    reconnect_drone()
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
                 drone_status["connection_status"] = "Error"
+                reset_telemetry_values()
         else:
             logger.warning("No active connection")
             reset_telemetry_values()
             time.sleep(1)
 
+def get_home_position():
+    connection.mav.command_long_send(
+        connection.target_system,
+        connection.target_component,
+        mavutil.mavlink.MAV_CMD_GET_HOME_POSITION,
+        0,  
+        0, 0, 0, 0, 0, 0, 0 
+    )
+    msg = connection.recv_match(type='HOME_POSITION', blocking=True)
+    if msg:
+        return {
+            'latitude': msg.latitude / 1e7,
+            'longitude': msg.longitude / 1e7,
+            'altitude': msg.altitude / 1000  # convert mm to meters
+        }
+    return None
 
+@app.route('/get_home_position', methods=['GET'])
+def get_home_position():
+    # Check if the MAVLink connection is properly established
+    if connection is None or connection.mav is None:
+        return jsonify({'error': "'NoneType' object has no attribute 'mav'"}), 500
+    # Request home position from the drone
+    try:
+        # Use MAVLink message to request home position if needed
+        msg = connection.recv_match(type='HOME_POSITION', blocking=True, timeout=5)
+        if msg is None:
+            return jsonify({'error': 'Failed to get home position from drone'}), 500
+        # Extract home position coordinates from the message
+        home_latitude = msg.latitude / 1e7  # Convert to degrees
+        home_longitude = msg.longitude / 1e7  # Convert to degrees
+        home_altitude = msg.altitude / 1000
+        return jsonify({'latitude': home_latitude, 'longitude': home_longitude,'altitude': home_altitude})
+
+    except Exception as e:
+        print(f"Error fetching home position: {e}")
+        return jsonify({'error': str(e)}), 500
 
 def set_mode(mode):
     if connection and mav:  # NEW: Check if mav object exists
@@ -539,38 +463,47 @@ def set_mode(mode):
             mode_id
         )
     return False
+# Request full parameter list from the drone
+def request_full_parameters():
+    if connection and mav:
+        mav.param_request_list_send(
+            connection.target_system, connection.target_component
+        )
+        # Wait for all parameters to be received
+        while True:
+            msg = connection.recv_match(type='PARAM_VALUE', blocking=True, timeout=5)
+            if msg:
+                parameters[msg.param_id] = msg.param_value  # Store parameter values
+                param_queue.put({
+                    'param_id': msg.param_id,'param_value': msg.param_value,'param_index': msg.param_index,'param_count': msg.param_count
+                })
+            else:
+                break
+
+# Endpoint to retrieve parameters in the frontend
+@app.route('/get_parameters', methods=['GET'])
+def get_parameters():
+    all_params = []
+    while not param_queue.empty():
+        all_params.append(param_queue.get())
+    return jsonify(all_params)
 
 
-@app.route('/full_parameters', methods=['GET'])
-def get_full_parameters():
-    if not connection:
-        return jsonify({"error": "No active connection"}), 400
+@app.route('/fetch_parameters', methods=['GET'])
+def fetch_parameters():
+    request_full_parameters()  # Trigger the request for parameters
+    return jsonify({"status": "Requesting parameters"})
 
-    connection.mav.param_request_list_send(connection.target_system, connection.target_component)
-    
-    start = time.time()
-    param_list = []
-    while time.time() - start < 30:  # Wait for up to 30 seconds
-        msg = connection.recv_match(type='PARAM_VALUE', blocking=True, timeout=1)
-        if msg:
-            param_list.append({
-                'name': msg.param_id,
-                'value': msg.param_value,
-                'type': msg.param_type,
-            })
-        else:
-            break  # No more parameters
-
-    return jsonify({"parameters": param_list})
-
-
-
+@app.route('/status', methods=['GET'])
+def get_status():
+    global drone_status, connection_quality
+    drone_status["connection_quality"] = connection_quality
+    return jsonify(drone_status), 200
 
 @app.route('/command', methods=['POST'])
 def command():
     data = request.json
     command = data['command']
-    
     if command == 'arm':
         success = send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1)
     elif command == 'disarm':
@@ -586,7 +519,7 @@ def command():
         latitude = float(data['latitude'])
         longitude = float(data['longitude'])
         altitude = float(data['altitude'])
-        success = send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude, altitude)
+        success = send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude, altitude/1000)
     elif command == 'set_mode':
         mode = data['mode']
         success = set_mode(mode)
@@ -595,13 +528,10 @@ def command():
     
     return jsonify({'status': 'success' if success else 'failed'}), 200 if success else 500
 
-
-
 @app.route('/messages', methods=['GET'])
 def get_ap_messages():
     with ap_messages_lock:
         return jsonify(list(ap_messages))
-
 
 @app.route('/ap_messages/clear', methods=['POST'])
 def clear_ap_messages():
@@ -609,6 +539,38 @@ def clear_ap_messages():
         ap_messages.clear()
     return jsonify({"status": "AP messages cleared"}), 200
 
+@app.route('/set_position', methods=['POST'])
+def set_position():
+    data = request.json
+    latitude = data.get('latitude')
+    longitude = data.get('longitude')
+    altitude = data.get('altitude')
+
+    if latitude is None or longitude is None or altitude is None:
+        return jsonify({'error': 'Missing latitude, longitude or altitude'}), 400
+    try:
+        # Convert latitude/longitude to MAVLink format
+        target_lat = int(latitude * 1e7)
+        target_lon = int(longitude * 1e7)
+        target_alt = float(altitude)  # Altitude in meters
+        # Send the MAVLink command to set position
+        connection.mav.set_position_target_global_int_send(
+            0,  # Time since boot (ms)
+            connection.target_system,  # Target system
+            connection.target_component,  # Target component
+            mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT_INT,  # Frame
+            int(0b0000111111111000),  # Type mask (only position control, no velocity/acceleration)
+            target_lat,  # Latitude (degrees * 1e7)
+            target_lon,  # Longitude (degrees * 1e7)
+            target_alt,  # Altitude in meters (relative to home altitude)
+            0, 0, 0,  # X, Y, Z velocity (ignored)
+            0, 0, 0,  # X, Y, Z acceleration (ignored)
+            0, 0  # Yaw, yaw_rate (ignored)
+        )
+        return jsonify({'status': 'Position set successfully'})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
 
 
 # Update the logging configuration
@@ -619,10 +581,6 @@ logger = logging.getLogger(__name__)
 def get_com_ports():
     ports = list_serial_ports()
     return jsonify({"ports": ports}), 200
-
-@app.route('/status', methods=['GET'])
-def get_status():
-    return jsonify(drone_status), 200
 
 if __name__ == '__main__':
     app.run(host="0.0.0.0", port=5001, debug=True)
