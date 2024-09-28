@@ -339,7 +339,7 @@ def connect_drone():
         home_position_set = False
         request_data_streams()
         threading.Thread(target=fetch_drone_data, daemon=True).start()
-        threading.Thread(target=send_heartbeat, daemon=True).start()  # NEW: Start heartbeat thread
+        threading.Thread(target=send_heartbeat, daemon=True).start()
         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
     except Exception as e:
         return jsonify({"status": f"Failed to connect: {str(e)}"}), 500

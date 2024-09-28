@@ -402,7 +402,7 @@ async def reconnect_drone():
         mav.srcComponent = 0
         await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
         last_heartbeat_time = time.time()
-        request_data_streams()
+        await request_data_streams()
         logger.info("Reconnected to drone successfully")
     except Exception as e:
         logger.error(f"Failed to reconnect: {str(e)}")
