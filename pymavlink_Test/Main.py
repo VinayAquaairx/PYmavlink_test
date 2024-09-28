@@ -393,19 +393,28 @@ async def send_heartbeat():
 
 async def reconnect_drone():
     global connection, mav, last_heartbeat_time
-    if connection:
-        connection.close()
-    try:
-        connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-        mav = mavutil.mavlink.MAVLink(connection)
-        mav.srcSystem = 255
-        mav.srcComponent = 0
-        await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
-        last_heartbeat_time = time.time()
-        await request_data_streams()
-        logger.info("Reconnected to drone successfully")
-    except Exception as e:
-        logger.error(f"Failed to reconnect: {str(e)}")
+    max_retries = 5
+    retry_delay = 5  # seconds
+
+    for attempt in range(max_retries):
+        if connection:
+            connection.close()
+        try:
+            connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+            mav = mavutil.mavlink.MAVLink(connection)
+            mav.srcSystem = 255
+            mav.srcComponent = 0
+            await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
+            last_heartbeat_time = time.time()
+            await request_data_streams()
+            logger.info("Reconnected to drone successfully")
+            return
+        except Exception as e:
+            logger.error(f"Failed to reconnect (attempt {attempt + 1}/{max_retries}): {str(e)}")
+            if attempt < max_retries - 1:
+                await asyncio.sleep(retry_delay)
+    
+    logger.error("Failed to reconnect after maximum attempts")
 
 
 @app.get("/connection_status")
