@@ -90,40 +90,14 @@ const DroneControlPanel = () => {
   const mapRef = useRef();
 
   const modeMap = {
-    0: 'STABILIZE',
-    1: 'ACRO',
-    2: 'ALT_HOLD',
-    3: 'AUTO',
-    4: 'GUIDED',
-    5: 'LOITER',
-    6: 'RTL',
-    7: 'CIRCLE',
-    8: 'POSITION',
-    9: 'LAND',
-    10: 'OF_LOITER',
-    11: 'DRIFT',
-    13: 'SPORT',
-    14: 'FLIP',
-    15: 'AUTOTUNE',
-    16: 'POSHOLD',
-    17: 'BRAKE',
-    18: 'THROW',
-    19: 'AVOID_ADSB',
-    20: 'GUIDED_NOGPS',
-    21: 'SMART_RTL',
-    22: 'FLOWHOLD',
-    23: 'FOLLOW',
-    24: 'ZIGZAG',
-    25: 'SYSTEMID',
-    26: 'AUTOROTATE',
-    27: 'AUTO_RTL',
+    0: 'STABILIZE',1: 'ACRO',2: 'ALT_HOLD',3: 'AUTO',4: 'GUIDED',5: 'LOITER',6: 'RTL',7: 'CIRCLE',8: 'POSITION',9: 'LAND',10: 'OF_LOITER',11: 'DRIFT',13: 'SPORT',14: 'FLIP',15: 'AUTOTUNE',
+    16: 'POSHOLD',17: 'BRAKE',18: 'THROW',19: 'AVOID_ADSB',20: 'GUIDED_NOGPS',21: 'SMART_RTL',22: 'FLOWHOLD',23: 'FOLLOW',24: 'ZIGZAG',25: 'SYSTEMID',26: 'AUTOROTATE',27: 'AUTO_RTL',
   };
   const handleModeChange = async (event) => {
     const newMode = event.target.value;
     setSelectedMode(newMode);
     await handleCommand('set_mode', { mode: newMode });
   };
-
 
 useEffect(() => {
     const fetchStatus = async () => {
@@ -148,7 +122,6 @@ useEffect(() => {
     return () => clearInterval(intervalId);
   }, []);
 
-
   const handleArmDisarm = () => {
     handleCommand(isArmed ? 'disarm' : 'arm');
   };
@@ -171,10 +144,8 @@ useEffect(() => {
         return;
       }
     }
-
     setShowAltitudeModal(true);
   };
-
 
   const handleAltitudeSubmit = () => {
     setShowAltitudeModal(false);

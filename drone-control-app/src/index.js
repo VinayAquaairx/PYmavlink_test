@@ -5,13 +5,14 @@ import App from './App';
 import App_trail from './App_trail' 
 import reportWebVitals from './reportWebVitals';
 import Repostion from './reposition'
+import Mission from './Planner'
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     <App_trail/>
-    {/* <Repostion /> */}
-  </React.StrictMode>
+    {/* <Mission /> */}
+    </React.StrictMode>
 );
 
 // If you want to start measuring performance in your app, pass a function
