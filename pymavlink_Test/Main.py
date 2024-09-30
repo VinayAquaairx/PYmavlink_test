@@ -27,7 +27,8 @@ last_heartbeat_time = 0
 packet_count = 0
 total_packets = 0
 connection_quality = 0
-
+fetch_complete = asyncio.Event()
+total_params = 0
 drone_status = {
     "connection_status": "Disconnected","system_id": None,"component_id": None,"firmware_type": None,"vehicle_type": None,"battery_status": {},"gps": None,"satellite_count": None,"hdop": None,"gps_fix_type": None,
     "armed": False,"firmware_version": None,"board_version": None,"rssi_dBm": None,"remrssi_dBm": None,"channel_outputs": {},"distance_to_home": None,"rangefinder": {},"rx_errors": None,"tx_buffer": None,
@@ -532,32 +533,86 @@ async def set_mode(mode):
         )
     return False
 
-# Request full parameter list from the drone
-def request_full_parameters():
+# async def request_full_parameters():
+#     global parameters
+#     parameters.clear()  # Clear existing parameters
+#     fetch_complete.clear()
+#     if connection and mav:
+#         try:
+#             mav.param_request_list_send(
+#                 connection.target_system, connection.target_component
+#             )
+#             # Wait for all parameters to be received
+#             while True:
+#                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
+#                 if msg:
+#                     parameters[msg.param_id] = {
+#                         'param_value': msg.param_value,
+#                     }
+#                 else:
+#                     break
+#         except Exception as e:
+#             print(f"Error fetching parameters: {str(e)}")
+#         finally:
+#             fetch_complete.set()
+
+# @app.route("/fetch_parameters")
+# async def fetch_parameters():
+#     asyncio.create_task(request_full_parameters())  # Fetch parameters in background
+#     return jsonify({"status": "Requesting parameters"})
+
+# @app.route("/get_parameters")
+# async def get_parameters():
+#     if not fetch_complete.is_set():
+#         return jsonify({"status": "fetching", "parameters": []})
+#     return jsonify({"status": "complete", "parameters": list(parameters.items())})
+
+async def request_full_parameters():
+    global parameters, total_params
+    parameters.clear()
+    fetch_complete.clear()
+    total_params = 0
     if connection and mav:
-        mav.param_request_list_send(
-            connection.target_system, connection.target_component
-        )
-        # Wait for all parameters to be received
-        while True:
-            msg = connection.recv_match(type='PARAM_VALUE', blocking=True, timeout=5)
-            if msg:
-                parameters[msg.param_id] = msg.param_value  # Store parameter values
-                parameters.put({
-                    'param_id': msg.param_id,'param_value': msg.param_value,'param_index': msg.param_index,'param_count': msg.param_count
-                })
-            else:
-                break
+        try:
+            mav.param_request_list_send(
+                connection.target_system, connection.target_component
+            )
+            while True:
+                msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
+                if msg:
+                    parameters[msg.param_id] = {
+                        'param_value': msg.param_value,
+                    }
+                    total_params = msg.param_count
+                    if len(parameters) == total_params:
+                        break
+                else:
+                    if total_params > 0 and len(parameters) == total_params:
+                        break
+                    if len(parameters) > 0:
+                        await asyncio.sleep(1)  # Wait a bit before trying again
+                    else:
+                        break  # If no parameters received, exit
+        except Exception as e:
+            print(f"Error fetching parameters: {str(e)}")
+        finally:
+            fetch_complete.set()
 
-# Endpoint to retrieve parameters in the frontend
-@app.get("/get_parameters")
-async def get_parameters():
-    return list(parameters.items())
-
-@app.get("/fetch_parameters")
+@app.route("/fetch_parameters")
 async def fetch_parameters():
-    await request_full_parameters()
-    return {"status": "Requesting parameters"}
+    if not fetch_complete.is_set():
+        asyncio.create_task(request_full_parameters())
+    return jsonify({"status": "Requesting parameters"})
+
+@app.route("/get_parameters")
+async def get_parameters():
+    if not fetch_complete.is_set():
+        return jsonify({"status": "fetching", "parameters": [], "total": total_params})
+    return jsonify({
+        "status": "complete", 
+        "parameters": list(parameters.items()), 
+        "total": total_params
+    })
 
 @app.route('/status', methods=['GET'])
 async def get_status():
