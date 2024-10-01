@@ -320,6 +320,7 @@ async def start_mission():
     except Exception as e:
         logger.error(f"Error starting mission: {str(e)}")
         return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
+    
 @app.route('/mission', methods=['GET'])
 async def read_mission():
     if not connection:
@@ -428,23 +429,29 @@ async def send_heartbeat():
                 )
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
-        await asyncio.sleep(1)
+        await asyncio.sleep(0.5)
 
 async def reconnect_drone():
     global connection, mav, last_heartbeat_time
-    if connection:
-        connection.close()
-    try:
-        connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-        mav = mavutil.mavlink.MAVLink(connection)
-        mav.srcSystem = 255
-        mav.srcComponent = 0
-        await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
-        last_heartbeat_time = time.time()
-        await request_data_streams()
-        logger.info("Reconnected to drone successfully")
-    except Exception as e:
-        logger.error(f"Failed to reconnect: {str(e)}")
+    max_retries = 3
+    for _ in range(max_retries):
+        try:
+            if connection:
+                connection.close()
+            connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+            mav = mavutil.mavlink.MAVLink(connection)
+            mav.srcSystem = 255
+            mav.srcComponent = 0
+            await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
+            last_heartbeat_time = time.time()
+            await request_data_streams()
+            logger.info("Reconnected to drone successfully")
+            return
+        except Exception as e:
+            logger.error(f"Failed to reconnect: {str(e)}")
+            await asyncio.sleep(2)
+    logger.error("Failed to reconnect after multiple attempts")
+    reset_telemetry_values()
 
 
 @app.get("/connection_status")
@@ -457,11 +464,11 @@ async def get_connection_status():
 
 async def fetch_drone_data():
     global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
-    heartbeat_timeout = 3
+    heartbeat_timeout = 5  # Increase timeout to 5 seconds
     while True:
         if connection:
             try:
-                msg = await asyncio.to_thread(connection.recv_match, blocking=True, timeout=1)
+                msg = await asyncio.to_thread(connection.recv_msg)
                 if msg:
                     total_packets += 1
                     if msg.get_type() != 'BAD_DATA':
@@ -472,13 +479,12 @@ async def fetch_drone_data():
                             last_heartbeat_time = time.time()
                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
                 if time.time() - last_heartbeat_time > heartbeat_timeout:
-                    logger.warning("Heartbeat lost. Clearing drone status.")
-                    reset_telemetry_values()
+                    logger.warning("Heartbeat lost. Attempting to reconnect.")
                     await reconnect_drone()
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
                 drone_status["connection_status"] = "Error"
-                reset_telemetry_values()
+                await reconnect_drone()
         else:
             logger.warning("No active connection")
             reset_telemetry_values()
@@ -532,40 +538,6 @@ async def set_mode(mode):
             mode_id
         )
     return False
-
-# async def request_full_parameters():
-#     global parameters
-#     parameters.clear()  # Clear existing parameters
-#     fetch_complete.clear()
-#     if connection and mav:
-#         try:
-#             mav.param_request_list_send(
-#                 connection.target_system, connection.target_component
-#             )
-#             # Wait for all parameters to be received
-#             while True:
-#                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
-#                 if msg:
-#                     parameters[msg.param_id] = {
-#                         'param_value': msg.param_value,
-#                     }
-#                 else:
-#                     break
-#         except Exception as e:
-#             print(f"Error fetching parameters: {str(e)}")
-#         finally:
-#             fetch_complete.set()
-
-# @app.route("/fetch_parameters")
-# async def fetch_parameters():
-#     asyncio.create_task(request_full_parameters())  # Fetch parameters in background
-#     return jsonify({"status": "Requesting parameters"})
-
-# @app.route("/get_parameters")
-# async def get_parameters():
-#     if not fetch_complete.is_set():
-#         return jsonify({"status": "fetching", "parameters": []})
-#     return jsonify({"status": "complete", "parameters": list(parameters.items())})
 
 async def request_full_parameters():
     global parameters, total_params
@@ -638,9 +610,9 @@ async def command():
     elif command == 'set_home':
         latitude = float(data['latitude'])
         longitude = float(data['longitude'])
-        # altitude = float(data['altitude'])
-        current_alt = drone_status['gps']['relative_alt'] if drone_status['gps'] else 0
-        success = await send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude,0)
+        altitude = float(data['altitude'])
+        # alt_int = int(altitude * 1000)
+        success = await send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude,altitude)
     elif command == 'set_mode':
         mode = data['mode']
         success = await set_mode(mode)
@@ -685,7 +657,6 @@ async def set_position():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
-
 @app.route('/com_ports', methods=['GET'])
 async def get_com_ports():
     ports = list_serial_ports()
