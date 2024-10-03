@@ -320,7 +320,7 @@ async def start_mission():
     except Exception as e:
         logger.error(f"Error starting mission: {str(e)}")
         return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
-    
+        
 @app.route('/mission', methods=['GET'])
 async def read_mission():
     if not connection:
@@ -418,6 +418,20 @@ async def disconnect_drone():
         return jsonify({"status": "No active connection"}), 400
     
 
+# async def send_heartbeat():
+#     while True:
+#         if connection and mav:
+#             try:
+#                 mav.heartbeat_send(
+#                     mavutil.mavlink.MAV_TYPE_GCS,
+#                     mavutil.mavlink.MAV_AUTOPILOT_INVALID,
+#                     0, 0, 0
+#                 )
+#             except Exception as e:
+#                 logger.error(f"Error sending heartbeat: {e}")
+#         await asyncio.sleep(0.5)
+
+
 async def send_heartbeat():
     while True:
         if connection and mav:
@@ -429,29 +443,45 @@ async def send_heartbeat():
                 )
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
-        await asyncio.sleep(0.5)
+        await asyncio.sleep(1)
+
+# async def reconnect_drone():
+#     global connection, mav, last_heartbeat_time
+#     max_retries = 3
+#     for _ in range(max_retries):
+#         try:
+#             if connection:
+#                 connection.close()
+#             connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+#             mav = mavutil.mavlink.MAVLink(connection)
+#             mav.srcSystem = 255
+#             mav.srcComponent = 0
+#             await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
+#             last_heartbeat_time = time.time()
+#             await request_data_streams()
+#             logger.info("Reconnected to drone successfully")
+#             return
+#         except Exception as e:
+#             logger.error(f"Failed to reconnect: {str(e)}")
+#             await asyncio.sleep(2)
+#     logger.error("Failed to reconnect after multiple attempts")
+#     reset_telemetry_values()
 
 async def reconnect_drone():
     global connection, mav, last_heartbeat_time
-    max_retries = 3
-    for _ in range(max_retries):
-        try:
-            if connection:
-                connection.close()
-            connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-            mav = mavutil.mavlink.MAVLink(connection)
-            mav.srcSystem = 255
-            mav.srcComponent = 0
-            await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
-            last_heartbeat_time = time.time()
-            await request_data_streams()
-            logger.info("Reconnected to drone successfully")
-            return
-        except Exception as e:
-            logger.error(f"Failed to reconnect: {str(e)}")
-            await asyncio.sleep(2)
-    logger.error("Failed to reconnect after multiple attempts")
-    reset_telemetry_values()
+    if connection:
+        connection.close()
+    try:
+        connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
+        mav = mavutil.mavlink.MAVLink(connection)
+        mav.srcSystem = 255
+        mav.srcComponent = 0
+        await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
+        last_heartbeat_time = time.time()
+        await request_data_streams()
+        logger.info("Reconnected to drone successfully")
+    except Exception as e:
+        logger.error(f"Failed to reconnect: {str(e)}")
 
 
 @app.get("/connection_status")
@@ -462,9 +492,37 @@ async def get_connection_status():
         return {"status": "Disconnected"}
     
 
+# async def fetch_drone_data():
+#     global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
+#     heartbeat_timeout = 5  # Increase timeout to 5 seconds
+#     while True:
+#         if connection:
+#             try:
+#                 msg = await asyncio.to_thread(connection.recv_msg)
+#                 if msg:
+#                     total_packets += 1
+#                     if msg.get_type() != 'BAD_DATA':
+#                         packet_count += 1
+#                         await update_drone_status(msg)
+#                         await process_mavlink_message(msg)
+#                         if msg.get_type() == 'HEARTBEAT':
+#                             last_heartbeat_time = time.time()
+#                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
+#                 if time.time() - last_heartbeat_time > heartbeat_timeout:
+#                     logger.warning("Heartbeat lost. Attempting to reconnect.")
+#                     await reconnect_drone()
+#             except Exception as e:
+#                 logger.error(f"Error receiving data: {e}")
+#                 drone_status["connection_status"] = "Error"
+#                 await reconnect_drone()
+#         else:
+#             logger.warning("No active connection")
+#             reset_telemetry_values()
+#             await asyncio.sleep(1)
+
 async def fetch_drone_data():
     global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
-    heartbeat_timeout = 5  # Increase timeout to 5 seconds
+    heartbeat_timeout = 3
     while True:
         if connection:
             try:
@@ -479,17 +537,20 @@ async def fetch_drone_data():
                             last_heartbeat_time = time.time()
                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
                 if time.time() - last_heartbeat_time > heartbeat_timeout:
-                    logger.warning("Heartbeat lost. Attempting to reconnect.")
+                    logger.warning("Heartbeat lost. Clearing drone status.")
+                    reset_telemetry_values()
                     await reconnect_drone()
             except Exception as e:
                 logger.error(f"Error receiving data: {e}")
                 drone_status["connection_status"] = "Error"
-                await reconnect_drone()
+                # await reconnect_drone()
+                reset_telemetry_values()
         else:
             logger.warning("No active connection")
             reset_telemetry_values()
             await asyncio.sleep(1)
 
+            
 async def get_home_position():
     if not connection:
         return None
@@ -610,9 +671,9 @@ async def command():
     elif command == 'set_home':
         latitude = float(data['latitude'])
         longitude = float(data['longitude'])
-        altitude = float(data['altitude'])
-        # alt_int = int(altitude * 1000)
-        success = await send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude,altitude)
+        # altitude = float(data['altitude'])
+        current_alt = drone_status['gps']['relative_alt'] if drone_status['gps'] else 0
+        success = await send_command_long(mavutil.mavlink.MAV_CMD_DO_SET_HOME, 0, 0, 0, 0, latitude, longitude,0)
     elif command == 'set_mode':
         mode = data['mode']
         success = await set_mode(mode)
@@ -657,6 +718,7 @@ async def set_position():
     except Exception as e:
         return jsonify({'error': str(e)}), 500
     
+
 @app.route('/com_ports', methods=['GET'])
 async def get_com_ports():
     ports = list_serial_ports()

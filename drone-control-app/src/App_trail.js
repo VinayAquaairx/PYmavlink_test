@@ -200,8 +200,30 @@ useEffect(() => {
   };
 
   const handleStartMission = async () => {
+    if (waypoints.length === 0) {
+      setAlertMessage('No waypoints set for the mission.');
+      return;
+    }
+
+    // Include the current drone position as the first waypoint
+    const missionWaypoints = [
+      {
+        lat: dronePosition[0],
+        lng: dronePosition[1],
+        altitude: droneStatus.gps ? droneStatus.gps.alt : 10, // Use current altitude or default
+        type: 'WAYPOINT',
+        params: {
+          Delay: 0,
+          'Acceptance Radius': 5,
+          'Pass Radius': 0,
+          'Yaw Angle': 0
+        }
+      },
+      ...waypoints
+    ];
+
     try {
-      const response = await axios.post('http://localhost:5001/mission', { waypoints });
+      const response = await axios.post('http://localhost:5001/mission', { waypoints: missionWaypoints });
       if (response.data.status === 'Mission started successfully') {
         setAlertMessage('Mission started successfully');
       } else {
@@ -452,8 +474,9 @@ useEffect(() => {
           />
           <MapEvents />
           <Marker position={dronePosition} icon={droneIcon}>
-            <Popup>Drone Location</Popup>
+            <Popup>Drone Location (Mission Start)</Popup>
           </Marker>
+          
           {homePosition && (
             <Marker position={homePosition} icon={homeIcon}>
               <Popup>Home Location</Popup>
@@ -510,9 +533,15 @@ useEffect(() => {
       
       <div className="waypoint-list">
         <h3>Mission Items</h3>
+        <div className="waypoint-item">
+          <span>1: Drone Start Position (Auto-added)</span>
+          <span>Lat: {dronePosition[0].toFixed(6)}</span>
+          <span>Lon: {dronePosition[1].toFixed(6)}</span>
+          <span>Alt: {(droneStatus.gps ? droneStatus.gps.alt : 10).toFixed(2)}m</span>
+        </div>
         {waypoints.map((waypoint, index) => (
           <div key={waypoint.id} className="waypoint-item">
-            <span>{index + 1}: {missionItemTypes[waypoint.type].name}</span>
+            <span>{index + 2}: {missionItemTypes[waypoint.type].name}</span>
             <span>Lat: {waypoint.lat.toFixed(6)}</span>
             <span>Lon: {waypoint.lng.toFixed(6)}</span>
             <span>Alt: {waypoint.altitude}m</span>
