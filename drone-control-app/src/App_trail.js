@@ -497,11 +497,8 @@ useEffect(() => {
             >
               <Popup>
                 <div>Waypoint {index + 1}</div>
-                
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
-
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
-
                 <div>
                   Alt: 
                   <input
@@ -510,7 +507,6 @@ useEffect(() => {
                     onChange={(e) => handleUpdateWaypoint(index, 'altitude', parseFloat(e.target.value))}
                   />
                 </div>
-
                 <div>
                   Type: 
                   <select
@@ -522,9 +518,7 @@ useEffect(() => {
                     ))}
                   </select>
                 </div>
-
                 {renderWaypointParams(waypoint, index)}
-
                 <div>
                   Distance: {calculateDistance(
                     index === 0 ? dronePosition : waypoints[index-1],
