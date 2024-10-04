@@ -199,13 +199,13 @@ useEffect(() => {
     ));
   };
 
+
   const handleStartMission = async () => {
     if (waypoints.length === 0) {
       setAlertMessage('No waypoints set for the mission.');
       return;
     }
 
-    // Include the current drone position as the first waypoint
     const missionWaypoints = [
       {
         lat: dronePosition[0],
@@ -224,14 +224,29 @@ useEffect(() => {
 
     try {
       const response = await axios.post('http://localhost:5001/mission', { waypoints: missionWaypoints });
-      if (response.data.status === 'Mission started successfully') {
-        setAlertMessage('Mission started successfully');
+      if (response.data.status === 'Mission uploaded successfully') {
+        setAlertMessage('Mission uploaded successfully');
       } else {
-        setAlertMessage(`Failed to start mission: ${response.data.status}`);
+        setAlertMessage(`Failed to upload mission: ${response.data.status}`);
       }
     } catch (error) {
-      console.error('Error starting mission:', error);
-      setAlertMessage(`Error starting mission: ${error.response?.data?.status || error.message}`);
+      console.error('Error uploading mission:', error);
+      setAlertMessage(`Error: ${error.response?.data?.status || error.message}`);
+    }
+  };
+
+  const handleReadMission = async () => {
+    try {
+      const response = await axios.get('http://localhost:5001/mission');
+      if (response.data.waypoints) {
+        setWaypoints(response.data.waypoints);
+        setAlertMessage('Mission read successfully');
+      } else {
+        setAlertMessage('No waypoints received');
+      }
+    } catch (error) {
+      console.error('Error reading mission:', error);
+      setAlertMessage(`Error: ${error.response?.data?.status || error.message}`);
     }
   };
 
@@ -424,18 +439,9 @@ useEffect(() => {
 
       {missionMode && (
         <div className="mission-controls">
-          <Button
-            onClick={handleStartMission}
-            className="start-mission-button"
-          >
-            Start Mission
-          </Button>
-          <Button
-            onClick={() => setWaypoints([])}
-            className="clear-mission-button"
-          >
-            Clear Mission
-          </Button>
+          <Button  onClick={handleStartMission}  className="start-mission-button">  Start Mission </Button>
+          <Button  onClick={() => setWaypoints([])}  className="clear-mission-button"  >  Clear Mission </Button>
+          <Button onClick={handleReadMission} className="read-mission-button">Read Mission</Button>
         </div>
       )}
 
@@ -462,21 +468,12 @@ useEffect(() => {
       </Modal>
 
       <div className="map-container">
-        <MapContainer
-          center={dronePosition}
-          zoom={13}
-          style={{ height: '400px', width: '100%' }}
-          ref={mapRef}
-        >
-          <TileLayer
-            url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
-            attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
-          />
+        <MapContainer center={dronePosition}  zoom={13} style={{ height: '400px', width: '100%' }}    ref={mapRef} >
+          <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
           <MapEvents />
           <Marker position={dronePosition} icon={droneIcon}>
             <Popup>Drone Location (Mission Start)</Popup>
-          </Marker>
-          
+          </Marker>   
           {homePosition && (
             <Marker position={homePosition} icon={homeIcon}>
               <Popup>Home Location</Popup>
@@ -491,10 +488,9 @@ useEffect(() => {
           )}
           {waypoints.map((waypoint, index) => (
             <Marker
-              key={waypoint.id}
+              key={index}
               position={[waypoint.lat, waypoint.lng]}
-              icon={waypointIcon}
-            >
+              icon={waypointIcon} >
               <Popup>
                 <div>Waypoint {index + 1}</div>
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
@@ -528,7 +524,38 @@ useEffect(() => {
               </Popup>
             </Marker>
           ))}
+
+          {/* {waypoints.map((waypoint, index) => (
+          <Marker key={index} position={[waypoint.lat, waypoint.lng]} icon={waypointIcon}>
+            <Popup>
+              <div>Waypoint {index + 1}</div>
+              <div>Lat: {waypoint.lat.toFixed(6)}</div>
+              <div>Lng: {waypoint.lng.toFixed(6)}</div>
+              <div>Altitude: {waypoint.altitude}m</div>
+            </Popup>
+          </Marker> */}
+
         </MapContainer>
+        {/* <table className="waypoint-table">
+        <thead>
+          <tr>
+            <th>#</th>
+            <th>Latitude</th>
+            <th>Longitude</th>
+            <th>Altitude (m)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {waypoints.map((waypoint, index) => (
+            <tr key={index}>
+              <td>{index + 1}</td>
+              <td>{waypoint.lat.toFixed(6)}</td>
+              <td>{waypoint.lng.toFixed(6)}</td>
+              <td>{waypoint.altitude}</td>
+            </tr>
+          ))}
+        </tbody>
+      </table> */}
       </div>
       
       <div className="waypoint-list">
@@ -560,7 +587,6 @@ useEffect(() => {
           </div>
         ))}
       </div>
-      
       <div className="status-display">
         <h2>Drone Status</h2>
         <pre>
