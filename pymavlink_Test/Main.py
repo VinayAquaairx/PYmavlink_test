@@ -257,7 +257,6 @@ def get_command_and_params(wp):
         logger.warning(f"Unknown waypoint type: {wp_type}")
         return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
 
-
 async def upload_mission(waypoints):
     if not connection:
         return False
@@ -337,7 +336,8 @@ async def read_mission():
             mission_items.append({
                 'lat': wp.x / 1e7,
                 'lng': wp.y / 1e7,
-                'altitude': wp.z
+                'altitude': wp.z,
+                'command': wp.command
             })
 
         return jsonify({'waypoints': mission_items}), 200
@@ -450,6 +450,7 @@ async def get_connection_status():
     else:
         return {"status": "Disconnected"}
     
+
 async def fetch_drone_data():
     global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
     heartbeat_timeout = 3
@@ -530,6 +531,38 @@ async def set_mode(mode):
         )
     return False
 
+# async def request_full_parameters():
+#     global parameters, total_params
+#     parameters.clear()
+#     fetch_complete.clear()
+#     total_params = 0
+#     if connection and mav:
+#         try:
+#             mav.param_request_list_send(
+#                 connection.target_system, connection.target_component
+#             )
+#             while True:
+#                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
+#                 if msg:
+#                     parameters[msg.param_id] = {
+#                         'param_value': msg.param_value,
+#                     }
+#                     total_params = msg.param_count
+#                     if len(parameters) == total_params:
+#                         break
+#                 else:
+#                     if total_params > 0 and len(parameters) == total_params:
+#                         break
+#                     if len(parameters) > 0:
+#                         await asyncio.sleep(1)  # Wait a bit before trying again
+#                     else:
+#                         break  # If no parameters received, exit
+#         except Exception as e:
+#             print(f"Error fetching parameters: {str(e)}")
+#         finally:
+#             fetch_complete.set()
+
+
 async def request_full_parameters():
     global parameters, total_params
     parameters.clear()
@@ -544,7 +577,9 @@ async def request_full_parameters():
                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
                 if msg:
                     parameters[msg.param_id] = {
-                        'param_value': msg.param_value,
+                        'value': msg.param_value,
+                        'type': msg.param_type,
+                        'index': msg.param_index
                     }
                     total_params = msg.param_count
                     if len(parameters) == total_params:
@@ -553,13 +588,60 @@ async def request_full_parameters():
                     if total_params > 0 and len(parameters) == total_params:
                         break
                     if len(parameters) > 0:
-                        await asyncio.sleep(1)  # Wait a bit before trying again
+                        await asyncio.sleep(1)
                     else:
-                        break  # If no parameters received, exit
+                        break
         except Exception as e:
             print(f"Error fetching parameters: {str(e)}")
         finally:
             fetch_complete.set()
+
+
+@app.route("/set_parameter", methods=['POST'])
+async def set_parameter():
+    data = await request.get_json()
+    param_id = data.get('param_id')
+    param_value = data.get('param_value')
+    
+    if not param_id or param_value is None:
+        return jsonify({"error": "Missing param_id or param_value"}), 400
+    
+    if connection and mav:
+        try:
+            # Convert param_value to float (MAVLink uses float for all parameters)
+            param_value_float = float(param_value)
+            
+            # Send parameter set command
+            mav.param_set_send(
+                connection.target_system,
+                connection.target_component,
+                param_id.encode('utf-8'),
+                param_value_float,
+                mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+            )
+            
+            # Wait for PARAM_VALUE message to confirm the change
+            msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
+            if msg and msg.param_id == param_id:
+                # Update local parameter dictionary
+                parameters[param_id]['value'] = msg.param_value
+                return jsonify({"status": "success", "new_value": msg.param_value}), 200
+            else:
+                return jsonify({"error": "Parameter set failed or timed out"}), 500
+        except Exception as e:
+            return jsonify({"error": str(e)}), 500
+    else:
+        return jsonify({"error": "No active connection"}), 400
+    
+async def update_parameters_periodically():
+    while True:
+        await request_full_parameters()
+        await asyncio.sleep(15)
+    
+# Make sure to start this task when your application starts
+@app.before_serving
+async def startup():
+    app.add_background_task(update_parameters_periodically)
 
 @app.route("/fetch_parameters")
 async def fetch_parameters():
@@ -570,7 +652,7 @@ async def fetch_parameters():
 @app.route("/get_parameters")
 async def get_parameters():
     if not fetch_complete.is_set():
-        return jsonify({"status": "fetching", "parameters": [], "total": total_params})
+        return jsonify({"status": "fetching", "parameters": list(parameters.items()), "total": total_params})
     return jsonify({
         "status": "complete", 
         "parameters": list(parameters.items()), 

@@ -256,71 +256,6 @@ def get_command_and_params(wp):
     else:
         logger.warning(f"Unknown waypoint type: {wp_type}")
         return (mavutil.mavlink.MAV_CMD_NAV_WAYPOINT, 0, 0, 0, 0)
-    
-
-# async def upload_mission(waypoints):
-#     if not connection:
-#         return False
-#     # Clear any existing mission
-#     connection.mav.mission_clear_all_send(connection.target_system, connection.target_component)
-#     ack = await asyncio.to_thread(connection.recv_match, type='MISSION_ACK', blocking=True, timeout=5)
-#     if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-#         logger.error("Failed to clear existing mission")
-#         return False
-#     # Upload new mission
-#     connection.mav.mission_count_send(connection.target_system, connection.target_component, len(waypoints))
-#     for i, wp in enumerate(waypoints):
-#         msg = await asyncio.to_thread(connection.recv_match, type=['MISSION_REQUEST'], blocking=True, timeout=5)
-#         if not msg:
-#             logger.error(f"Failed to receive MISSION_REQUEST for waypoint {i}")
-#             return False 
-#         # Set command and parameters based on waypoint type
-#         command, param1, param2, param3, param4 = get_command_and_params(wp)
-#         connection.mav.mission_item_int_send(
-#             connection.target_system,
-#             connection.target_component,
-#             i,
-#             mavutil.mavlink.MAV_FRAME_GLOBAL_RELATIVE_ALT,
-#             command,
-#             0, 1,
-#             param1, param2, param3, param4,
-#             int(wp['lat'] * 1e7),
-#             int(wp['lng'] * 1e7),
-#             wp['altitude']
-#         )
-#     # Wait for mission acceptance
-#     ack = await asyncio.to_thread(connection.recv_match, type='MISSION_ACK', blocking=True, timeout=5)
-#     if not ack or ack.type != mavutil.mavlink.MAV_MISSION_ACCEPTED:
-#         logger.error("Mission upload failed")
-#         return False
-
-#     logger.info("Mission uploaded successfully")
-#     return True
-
-# @app.route('/mission', methods=['POST'])
-# async def start_mission():
-#     waypoints = (await request.get_json())['waypoints']
-    
-#     if not connection:
-#         return jsonify({'status': 'No active connection'}), 400
-#     try:
-#         if not await upload_mission(waypoints):
-#             return jsonify({'status': 'Failed to upload mission'}), 500
-#         connection.mav.mission_request_list_send(connection.target_system, connection.target_component)
-#         if not await set_mode('AUTO'):
-#             return jsonify({'status': 'Failed to set AUTO mode'}), 500
-#         if not await send_command_long(mavutil.mavlink.MAV_CMD_COMPONENT_ARM_DISARM, 1):
-#             return jsonify({'status': 'Failed to arm the drone'}), 500
-
-#         # Start mission
-#         if not await send_command_long(mavutil.mavlink.MAV_CMD_MISSION_START):
-#             return jsonify({'status': 'Failed to start mission'}), 500
-
-#         return jsonify({'status': 'Mission started successfully'}), 200
-#     except Exception as e:
-#         logger.error(f"Error starting mission: {str(e)}")
-#         return jsonify({'status': f'Failed to start mission: {str(e)}'}), 500
-
 
 async def upload_mission(waypoints):
     if not connection:
@@ -401,41 +336,14 @@ async def read_mission():
             mission_items.append({
                 'lat': wp.x / 1e7,
                 'lng': wp.y / 1e7,
-                'altitude': wp.z
+                'altitude': wp.z,
+                'command': wp.command
             })
 
         return jsonify({'waypoints': mission_items}), 200
 
     except Exception as e:
         return jsonify({'status': f'Error: {str(e)}'}), 500
-
-# @app.route('/mission', methods=['GET'])
-# async def read_mission():
-#     if not connection:
-#         return jsonify({'status': 'No active connection'}), 400
-#     try:
-#         connection.mav.mission_request_list_send(connection.target_system, connection.target_component)
-#         msg = await asyncio.to_thread(connection.recv_match, type='MISSION_COUNT', blocking=True, timeout=5)
-#         if not msg:
-#             return jsonify({'status': 'Failed to receive mission count'}), 500
-        
-#         waypoints = []
-#         for i in range(msg.count):
-#             connection.mav.mission_request_int_send(connection.target_system, connection.target_component, i)
-#             msg = await asyncio.to_thread(connection.recv_match, type='MISSION_ITEM_INT', blocking=True, timeout=5)
-#             if not msg:
-#                 return jsonify({'status': f'Failed to receive waypoint {i}'}), 500
-#             waypoints.append({
-#                 'lat': msg.x / 1e7,
-#                 'lng': msg.y / 1e7,
-#                 'altitude': msg.z,
-#                 'command': msg.command
-#             })
-        
-#         return jsonify({'waypoints': waypoints}), 200
-#     except Exception as e:
-#         logger.error(f"Error reading mission: {str(e)}")
-#         return jsonify({'status': f'Failed to read mission: {str(e)}'}), 500
 
 @app.route('/mission', methods=['DELETE'])
 async def remove_mission():
@@ -504,21 +412,6 @@ async def disconnect_drone():
         return jsonify({"status": "Disconnected from drone"}), 200
     else:
         return jsonify({"status": "No active connection"}), 400
-    
-
-# async def send_heartbeat():
-#     while True:
-#         if connection and mav:
-#             try:
-#                 mav.heartbeat_send(
-#                     mavutil.mavlink.MAV_TYPE_GCS,
-#                     mavutil.mavlink.MAV_AUTOPILOT_INVALID,
-#                     0, 0, 0
-#                 )
-#             except Exception as e:
-#                 logger.error(f"Error sending heartbeat: {e}")
-#         await asyncio.sleep(0.5)
-
 
 async def send_heartbeat():
     while True:
@@ -532,28 +425,6 @@ async def send_heartbeat():
             except Exception as e:
                 logger.error(f"Error sending heartbeat: {e}")
         await asyncio.sleep(1)
-
-# async def reconnect_drone():
-#     global connection, mav, last_heartbeat_time
-#     max_retries = 3
-#     for _ in range(max_retries):
-#         try:
-#             if connection:
-#                 connection.close()
-#             connection = mavutil.mavlink_connection(global_device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-#             mav = mavutil.mavlink.MAVLink(connection)
-#             mav.srcSystem = 255
-#             mav.srcComponent = 0
-#             await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
-#             last_heartbeat_time = time.time()
-#             await request_data_streams()
-#             logger.info("Reconnected to drone successfully")
-#             return
-#         except Exception as e:
-#             logger.error(f"Failed to reconnect: {str(e)}")
-#             await asyncio.sleep(2)
-#     logger.error("Failed to reconnect after multiple attempts")
-#     reset_telemetry_values()
 
 async def reconnect_drone():
     global connection, mav, last_heartbeat_time

@@ -4,14 +4,13 @@ import './index.css';
 import App from './App';
 import App_trail from './App_trail' 
 import reportWebVitals from './reportWebVitals';
-import Repostion from './reposition'
-import Mission from './Planner'
+import ParameterList from './Para_try';
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
-    <App_trail/>
-    {/* <Mission /> */}
+    {/* <App_trail/> */}
+    <ParameterList />
     </React.StrictMode>
 );
 

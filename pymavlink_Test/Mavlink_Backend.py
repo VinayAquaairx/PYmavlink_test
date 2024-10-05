@@ -400,7 +400,7 @@ def fetch_drone_data():
                             last_heartbeat_time = time.time()
                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
                 if time.time() - last_heartbeat_time > heartbeat_timeout:
-                    logger.warning("Heartbeat lost. Clearing drone status.")
+                    logger.warning("Heartbeat lost. Reconnecting to drone")
                     # reset_telemetry_values()
                     reconnect_drone()
             except Exception as e:
