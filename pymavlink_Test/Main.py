@@ -578,8 +578,6 @@ async def request_full_parameters():
                 if msg:
                     parameters[msg.param_id] = {
                         'value': msg.param_value,
-                        'type': msg.param_type,
-                        'index': msg.param_index
                     }
                     total_params = msg.param_count
                     if len(parameters) == total_params:
@@ -642,7 +640,7 @@ async def update_parameters_periodically():
 @app.before_serving
 async def startup():
     app.add_background_task(update_parameters_periodically)
-
+    
 @app.route("/fetch_parameters")
 async def fetch_parameters():
     if not fetch_complete.is_set():
@@ -652,7 +650,7 @@ async def fetch_parameters():
 @app.route("/get_parameters")
 async def get_parameters():
     if not fetch_complete.is_set():
-        return jsonify({"status": "fetching", "parameters": list(parameters.items()), "total": total_params})
+        return jsonify({"status": "fetching", "parameters": [], "total": total_params})
     return jsonify({
         "status": "complete", 
         "parameters": list(parameters.items()), 
