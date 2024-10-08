@@ -1,50 +1,75 @@
-import asyncio
+from quart import Quart, jsonify, request
+from quart_cors import cors
 from pymavlink import mavutil
-from quart import Quart, jsonify
-import time
+import asyncio
 
-# Initialize Quart app
 app = Quart(__name__)
+app = cors(app, allow_origin="*")
 
-# Global variable to store channel values
-channel_values = {}
+# Create connections to both UDP and TCP for the drone
+udp_connection = mavutil.mavlink_connection("udp:127.0.0.1:14550")
+tcp_connection = mavutil.mavlink_connection("tcp:192.168.4.1:8888")
 
-async def connect_mavlink():
-    global channel_values
+async def wait_for_heartbeat(connection):
+    """Waits for a heartbeat from the drone."""
     while True:
-        try:
-            # Connect to the radio controller
-            master = mavutil.mavlink_connection('tcp:192.168.4.1:8888', autoreconnect=True, force_connected=False)
+        msg = connection.recv_match(type='HEARTBEAT', blocking=True, timeout=5)
+        if msg:
+            return True
+        await asyncio.sleep(1)
+    return False
 
-            print("Waiting for heartbeat...")
-            # Wait for the first heartbeat
-            await asyncio.to_thread(master.wait_heartbeat)
-            print(f"Heartbeat received from system (system {master.target_system} component {master.target_component})")
+async def start_calibration(connection):
+    """Initiates accelerometer calibration."""
+    try:
+        await send_command(connection, mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION, 1)
+        return "Accelerometer calibration started"
+    except Exception as e:
+        return f"Error: {e}"
 
-            while True:
-                # Read the RC channels
-                msg = await asyncio.to_thread(master.recv_match, type='RC_CHANNELS', blocking=True, timeout=1)
-                if msg:
-                    # Update channel values
-                    channel_values = {
-                        f'channel_{i+1}': getattr(msg, f'chan{i+1}_raw')
-                        for i in range(18)  # MAVLink supports up to 18 channels
-                    }
-                    print("Updated channel values:", channel_values)
-                else:
-                    print("No message received")
-        except Exception as e:
-            print(f"Connection error: {e}")
-            print("Retrying in 5 seconds...")
-            await asyncio.sleep(5)
+async def send_command(connection, command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
+    """Helper to send MAVLink commands."""
+    connection.mav.command_long_send(
+        connection.target_system,
+        connection.target_component,
+        command,
+        0,
+        param1, param2, param3, param4, param5, param6, param7
+    )
 
-@app.route('/channels')
-async def get_channels():
-    return jsonify(channel_values)
+@app.route('/connect', methods=['GET'])
+async def connect():
+    """Attempts to connect and waits for a heartbeat."""
+    connected = await wait_for_heartbeat(udp_connection)
+    if connected:
+        return jsonify({"status": "Connected to drone via UDP"})
+    return jsonify({"error": "Could not connect to drone"}), 500
 
-@app.before_serving
-async def startup():
-    app.add_background_task(connect_mavlink)
+@app.route('/calibrate/start', methods=['POST'])
+async def calibrate_start():
+    """Starts the accelerometer calibration."""
+    response = await start_calibration(udp_connection)
+    return jsonify({"status": response})
+
+@app.route('/calibrate/position', methods=['POST'])
+async def calibrate_position():
+    """Sets the required position during calibration."""
+    position = request.json.get("position")
+    positions = {
+        "level": 1, "left": 2, "right": 3,
+        "nose_up": 4, "nose_down": 5, "tail_down": 6
+    }
+    pos_value = positions.get(position)
+    if pos_value is None:
+        return jsonify({"error": "Invalid position"}), 400
+    await send_command(udp_connection, mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS, pos_value)
+    return jsonify({"status": f"Position {position} set"})
+
+@app.route('/calibrate/status', methods=['GET'])
+async def calibration_status():
+    """Returns the calibration status."""
+    msg = udp_connection.recv_match(type='STATUSTEXT', blocking=True, timeout=5)
+    return jsonify({"status": msg.text if msg else "No update available"})
 
 if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000)
+    app.run(port=5000)

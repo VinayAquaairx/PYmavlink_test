@@ -4,13 +4,14 @@ import './index.css';
 import App from './App';
 import App_trail from './App_trail' 
 import reportWebVitals from './reportWebVitals';
-import ParameterList from './Para_try';
+import Accecal from './Accecal'
+
 
 const root = ReactDOM.createRoot(document.getElementById('root'));
 root.render(
   <React.StrictMode>
     {/* <App_trail/> */}
-    <ParameterList />
+    <Accecal/>
     </React.StrictMode>
 );
 

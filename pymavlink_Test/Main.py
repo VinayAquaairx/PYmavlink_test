@@ -9,7 +9,7 @@ import logging
 import math
 import platform
 from collections import deque
-import socket
+
 
 app = Quart(__name__)
 app = cors(app, 
@@ -17,6 +17,7 @@ app = cors(app,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
+
 
 connection = None
 mav = None
@@ -358,7 +359,6 @@ async def remove_mission():
     except Exception as e:
         logger.error(f"Error clearing mission: {str(e)}")
         return jsonify({'status': f'Failed to clear mission: {str(e)}'}), 500
-
 
 async def periodic_connection_check():
     while True:
