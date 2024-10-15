@@ -10,14 +10,12 @@ import math
 import platform
 from collections import deque
 
-
 app = Quart(__name__)
 app = cors(app, 
     allow_origin=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
 )
-
 
 connection = None
 mav = None
@@ -137,7 +135,6 @@ async def update_drone_status(msg):
     elif msg_type == 'PARAM_VALUE':  # Handle PARAM_VALUE messages
         parameters[msg.param_id] = msg.param_value
 
-
 async def send_command_long(command, param1=0, param2=0, param3=0, param4=0, param5=0, param6=0, param7=0):
     if connection and mav:
         mav.command_long_send(
@@ -160,7 +157,6 @@ def reset_telemetry_values():
     packet_count = 0
     total_packets = 0
     connection_quality = 0
-
 
 async def calculate_distance_to_home():
     home_position = await get_home_position()
@@ -195,6 +191,7 @@ async def process_mavlink_message(msg):
         cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
         print(cmd_message)
 
+
 # Modify existing connection logic (make sure the connection is set properly)
 async def connect_to_drone(connection_string, baudrate=115200):
     global connection, mav
@@ -228,7 +225,6 @@ async def request_data_streams():
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
                 0, msg_id, 100000, 0, 0, 0, 0, 0 
             )
-
 
 def get_command_and_params(wp):
     wp_type = wp['type']
@@ -530,38 +526,6 @@ async def set_mode(mode):
             mode_id
         )
     return False
-
-# async def request_full_parameters():
-#     global parameters, total_params
-#     parameters.clear()
-#     fetch_complete.clear()
-#     total_params = 0
-#     if connection and mav:
-#         try:
-#             mav.param_request_list_send(
-#                 connection.target_system, connection.target_component
-#             )
-#             while True:
-#                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
-#                 if msg:
-#                     parameters[msg.param_id] = {
-#                         'param_value': msg.param_value,
-#                     }
-#                     total_params = msg.param_count
-#                     if len(parameters) == total_params:
-#                         break
-#                 else:
-#                     if total_params > 0 and len(parameters) == total_params:
-#                         break
-#                     if len(parameters) > 0:
-#                         await asyncio.sleep(1)  # Wait a bit before trying again
-#                     else:
-#                         break  # If no parameters received, exit
-#         except Exception as e:
-#             print(f"Error fetching parameters: {str(e)}")
-#         finally:
-#             fetch_complete.set()
-
 
 async def request_full_parameters():
     global parameters, total_params

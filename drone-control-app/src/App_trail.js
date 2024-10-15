@@ -276,13 +276,20 @@ useEffect(() => {
     });
     return null;
   };
+  
+  const handleSearch = (event) => {
+    setSearchQuery(event.target.value);
+  };
+
+  const API_BASE_URL = 'http://localhost:5001';
+
+  const [searchQuery, setSearchQuery] = useState('');
+
   const fetchParameters = async () => {
     setIsLoadingParameters(true);
     try {
-      const response = await axios.get('http://localhost:5001/fetch_parameters');
-      if (response.data.status === 'Requesting parameters') {
-        pollParameters();
-      }
+      await axios.get(`${API_BASE_URL}/fetch_parameters`);
+      pollParameters();
     } catch (error) {
       console.error('Error fetching parameters:', error);
       setAlertMessage('Failed to fetch parameters');
@@ -293,21 +300,50 @@ useEffect(() => {
   const pollParameters = async () => {
     const interval = setInterval(async () => {
       try {
-        const response = await axios.get('http://localhost:5001/get_parameters');
-        if (response.data.length > 0) {
-          setParameters(prevParams => [...prevParams, ...response.data]);
-        } else {
+        const response = await axios.get(`${API_BASE_URL}/get_parameters`);
+        if (response.data.status === 'complete') {
+          // Convert the parameters array to the format your component expects
+          const formattedParameters = response.data.parameters.map(([key, value]) => ({
+            name: key,
+            value: value.value,
+            type: value.type
+          }));
+          setParameters(formattedParameters);
           clearInterval(interval);
           setIsLoadingParameters(false);
+        } else if (response.data.status === 'fetching') {
+          // Still fetching, continue polling
+          setParameters(response.data.parameters);
         }
       } catch (error) {
         console.error('Error polling parameters:', error);
         clearInterval(interval);
         setIsLoadingParameters(false);
+        setAlertMessage('Error while fetching parameters');
       }
     }, 1000);
   };
-
+  const handleParameterChange = async (paramName, newValue) => {
+    try {
+      const response = await axios.post(`${API_BASE_URL}/set_parameter`, {
+        param_id: paramName,
+        param_value: newValue
+      });
+      if (response.data.status === 'success') {
+        // Update the parameter in the local state
+        setParameters(prevParams => 
+          prevParams.map(param => 
+            param.name === paramName ? { ...param, value: response.data.new_value } : param
+          )
+        );
+        setAlertMessage(`Parameter ${paramName} updated successfully`);
+      }
+    } catch (error) {
+      console.error('Error updating parameter:', error);
+      setAlertMessage(`Failed to update parameter ${paramName}`);
+    }
+  };
+  
   const handleCheckFullParams = () => {
     setShowParameterList(true);
     fetchParameters();
@@ -329,6 +365,10 @@ useEffect(() => {
       }
     };
 
+    const filteredParameters = parameters.filter(param =>
+      param.name.toLowerCase().includes(searchQuery.toLowerCase())
+    );
+    
     if (!isOpen) return null;
 
     return (
@@ -348,16 +388,32 @@ useEffect(() => {
               </div>
             ) : (
               <table className="parameter-table">
-                <thead>
-                  <tr>
-                    <th>Parameter Name</th>
-                    <th>Value</th>
-                  </tr>
-                </thead>
-                <tbody>{parameters.map((param, index) => (<tr key={index}><td>{param.param_id}</td> <td>{param.param_value}</td></tr>
-                  ))}
-                </tbody>
-              </table>
+            <thead>
+              <tr>
+                <th>Parameter Name</th>
+                <th>Value</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              {filteredParameters.map((param) => (
+                <tr key={param.name}>
+                  <td>{param.name}</td>
+
+                  <td>{param.value}</td>
+
+                  <td>
+                    <input
+                      type="number"
+                      defaultValue={param.value}
+                      onBlur={(e) => handleParameterChange(param.name, e.target.value)}
+                    />
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
             )}
           </div>
           <button className="close-button" onClick={onClose}>Close</button>
