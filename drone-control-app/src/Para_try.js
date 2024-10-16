@@ -109,6 +109,7 @@ const ParameterList = () => {
                   <th>Action</th>
                 </tr>
               </thead>
+              
               <tbody>
                 {parameters.map((param) => (
                   <tr key={param.name}>

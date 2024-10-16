@@ -93,13 +93,14 @@ const DroneControlPanel = () => {
     0: 'STABILIZE',1: 'ACRO',2: 'ALT_HOLD',3: 'AUTO',4: 'GUIDED',5: 'LOITER',6: 'RTL',7: 'CIRCLE',8: 'POSITION',9: 'LAND',10: 'OF_LOITER',11: 'DRIFT',13: 'SPORT',14: 'FLIP',15: 'AUTOTUNE',
     16: 'POSHOLD',17: 'BRAKE',18: 'THROW',19: 'AVOID_ADSB',20: 'GUIDED_NOGPS',21: 'SMART_RTL',22: 'FLOWHOLD',23: 'FOLLOW',24: 'ZIGZAG',25: 'SYSTEMID',26: 'AUTOROTATE',27: 'AUTO_RTL',
   };
+  
   const handleModeChange = async (event) => {
     const newMode = event.target.value;
     setSelectedMode(newMode);
     await handleCommand('set_mode', { mode: newMode });
   };
 
-useEffect(() => {
+    useEffect(() => {
     const fetchStatus = async () => {
       try {
         const response = await axios.get('http://localhost:5001/status');
@@ -198,7 +199,6 @@ useEffect(() => {
       </div>
     ));
   };
-
 
   const handleStartMission = async () => {
     if (waypoints.length === 0) {
@@ -458,17 +458,16 @@ useEffect(() => {
       >
         Return to Launch
       </Button>
-    <button 
+
+      <button 
         onClick={handleCheckFullParams}
         className="check-params-button"
       >
         Check Full Parameter List
       </button>
 
-      <ParameterList 
-        isOpen={showParameterList} 
-        onClose={() => setShowParameterList(false)} 
-      />
+      <ParameterList isOpen={showParameterList} onClose={() => setShowParameterList(false)} />
+
       <div className="mode-selector">
         <label htmlFor="mode-select">Flight Mode: </label>
         <select
@@ -526,15 +525,19 @@ useEffect(() => {
       <div className="map-container">
         <MapContainer center={dronePosition}  zoom={13} style={{ height: '400px', width: '100%' }}    ref={mapRef} >
           <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"  attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors' />
+          
           <MapEvents />
+
           <Marker position={dronePosition} icon={droneIcon}>
             <Popup>Drone Location (Mission Start)</Popup>
           </Marker>   
+
           {homePosition && (
             <Marker position={homePosition} icon={homeIcon}>
               <Popup>Home Location</Popup>
             </Marker>
           )}
+
           {tempMarker && (
             <Marker position={tempMarker}>
               <Popup>
@@ -542,6 +545,7 @@ useEffect(() => {
               </Popup>
             </Marker>
           )}
+
           {waypoints.map((waypoint, index) => (
             <Marker
               key={index}
@@ -549,8 +553,11 @@ useEffect(() => {
               icon={waypointIcon} >
               <Popup>
                 <div>Waypoint {index + 1}</div>
+
                 <div>Lat: {waypoint.lat.toFixed(6)}</div>
+
                 <div>Lon: {waypoint.lng.toFixed(6)}</div>
+
                 <div>
                   Alt: 
                   <input
@@ -559,6 +566,7 @@ useEffect(() => {
                     onChange={(e) => handleUpdateWaypoint(index, 'altitude', parseFloat(e.target.value))}
                   />
                 </div>
+
                 <div>
                   Type: 
                   <select
@@ -570,7 +578,9 @@ useEffect(() => {
                     ))}
                   </select>
                 </div>
+
                 {renderWaypointParams(waypoint, index)}
+
                 <div>
                   Distance: {calculateDistance(
                     index === 0 ? dronePosition : waypoints[index-1],
@@ -592,26 +602,27 @@ useEffect(() => {
           </Marker> */}
 
         </MapContainer>
+
         {/* <table className="waypoint-table">
-        <thead>
-          <tr>
-            <th>#</th>
-            <th>Latitude</th>
-            <th>Longitude</th>
-            <th>Altitude (m)</th>
-          </tr>
-        </thead>
-        <tbody>
-          {waypoints.map((waypoint, index) => (
-            <tr key={index}>
-              <td>{index + 1}</td>
-              <td>{waypoint.lat.toFixed(6)}</td>
-              <td>{waypoint.lng.toFixed(6)}</td>
-              <td>{waypoint.altitude}</td>
+          <thead>
+            <tr>
+              <th>#</th>
+              <th>Latitude</th>
+              <th>Longitude</th>
+              <th>Altitude (m)</th>
             </tr>
-          ))}
-        </tbody>
-      </table> */}
+          </thead>
+          <tbody>
+            {waypoints.map((waypoint, index) => (
+              <tr key={index}>
+                <td>{index + 1}</td>
+                <td>{waypoint.lat.toFixed(6)}</td>
+                <td>{waypoint.lng.toFixed(6)}</td>
+                <td>{waypoint.altitude}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table> */}
       </div>
       
       <div className="waypoint-list">
@@ -622,15 +633,21 @@ useEffect(() => {
           <span>Lon: {dronePosition[1].toFixed(6)}</span>
           <span>Alt: {(droneStatus.gps ? droneStatus.gps.alt : 10).toFixed(2)}m</span>
         </div>
+
         {waypoints.map((waypoint, index) => (
           <div key={waypoint.id} className="waypoint-item">
             <span>{index + 2}: {missionItemTypes[waypoint.type].name}</span>
+            
             <span>Lat: {waypoint.lat.toFixed(6)}</span>
+
             <span>Lon: {waypoint.lng.toFixed(6)}</span>
+
             <span>Alt: {waypoint.altitude}m</span>
+
             {Object.entries(waypoint.params).map(([param, value]) => (
               <span key={param}>{param}: {value}</span>
             ))}
+
             <Button
               onClick={() => {
                 const newWaypoints = waypoints.filter((_, i) => i !== index);
@@ -643,8 +660,10 @@ useEffect(() => {
           </div>
         ))}
       </div>
+
       <div className="status-display">
         <h2>Drone Status</h2>
+        
         <pre>
           {JSON.stringify(droneStatus, null, 2)}
         </pre>
