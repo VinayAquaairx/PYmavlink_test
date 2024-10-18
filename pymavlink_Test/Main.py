@@ -887,8 +887,8 @@ def update_calibration_data(msg):
 
 async def update_cali_data_continuously():
     while True:
-        # msg = connection.recv_match(type=["MAG_CAL_REPORT", "MAG_CAL_PROGRESS", "STATUSTEXT", "HEARTBEAT"], blocking=False)
-        msg = connection.recv_msg
+        msg = connection.recv_match(type=["MAG_CAL_REPORT", "MAG_CAL_PROGRESS", "STATUSTEXT", "HEARTBEAT"], blocking=False)
+        # msg = connection.recv_msg
         if msg:
             update_calibration_data(msg)
         await asyncio.sleep(0.01)
