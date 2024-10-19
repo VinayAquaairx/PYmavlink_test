@@ -47,16 +47,25 @@ MAX_AP_MESSAGES = 1000
 ap_messages = deque(maxlen=MAX_AP_MESSAGES)
 ap_messages_lock = asyncio.Lock()
 
-ACCEL_CAL_POSITIONS = {
-    "level": 1,
-    "left": 2,
-    "right": 3,
-    "nose_up": 4,
-    "nose_down": 5,
-    "tail_down": 6
-}
+
+async def request_autopilot_capabilities():
+    if connection and mav:
+        mav.command_long_send(
+            connection.target_system, connection.target_component,
+            mavutil.mavlink.MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES,
+            0, 1, 0, 0, 0, 0, 0, 0
+        )
+        logger.info("Requested autopilot capabilities")
 
 
+async def send_banner_request():
+    if connection and mav:
+        mav.command_long_send(
+            connection.target_system, connection.target_component,
+            mavutil.mavlink.MAV_CMD_DO_SEND_BANNER,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+        logger.info("Sent banner request")
 
 
 
@@ -101,6 +110,8 @@ async def connect_drone():
         last_heartbeat_time = time.time()
         home_position_set = False
         await request_data_streams()
+        await request_autopilot_capabilities()
+        await send_banner_request()
         asyncio.create_task(fetch_drone_data())
         asyncio.create_task(send_heartbeat())
         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
@@ -164,8 +175,6 @@ async def disconnect_drone():
 
 
 
-
-
 def list_serial_ports():
     if platform.system() == "Windows":
         ports = serial.tools.list_ports.comports()
@@ -178,8 +187,6 @@ def list_serial_ports():
 async def get_com_ports():
     ports = list_serial_ports()
     return jsonify({"ports": ports}), 200
-
-
 
 
 
@@ -567,17 +574,49 @@ async def process_mavlink_message(msg):
         cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
         print(cmd_message)
 
+# async def request_data_streams():
+#     if connection and mav:
+#         mav.request_data_stream_send(
+#             connection.target_system, connection.target_component,
+#             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
+#         )
+
+#         message_types = [
+#             mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS, mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
+#             mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
+#             mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
+#         ]
+
+#         for msg_id in message_types:
+#             mav.command_long_send(
+#                 connection.target_system, connection.target_component,
+#                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
+#                 0, msg_id, 100000, 0, 0, 0, 0, 0 
+#             )
+
 async def request_data_streams():
     if connection and mav:
+        # Request all data streams
         mav.request_data_stream_send(
             connection.target_system, connection.target_component,
             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
         )
 
+        # Request specific message intervals
         message_types = [
-            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS, mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
-            mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
-            mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
+            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,
+            mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,
+            mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,
+            mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
+            mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
+            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,
+            mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,
+            mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,
+            mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
+            mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,
+            mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
+            mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,
+            mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
         ]
 
         for msg_id in message_types:
@@ -586,6 +625,25 @@ async def request_data_streams():
                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
                 0, msg_id, 100000, 0, 0, 0, 0, 0 
             )
+
+        # Request additional data streams with specific rates
+        message_rates = {
+            mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_POSITION: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 4,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA2: 4,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTRA3: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS: 2,
+        }
+        
+        for stream_id, rate in message_rates.items():
+            mav.request_data_stream_send(
+                connection.target_system, connection.target_component,
+                stream_id, rate, 1
+            )
+            logger.info(f"Requested data stream {stream_id} at {rate} Hz")
+            await asyncio.sleep(0.1)
 
 @app.route('/messages', methods=['GET'])
 async def get_ap_messages():
