@@ -48,6 +48,29 @@ ap_messages = deque(maxlen=MAX_AP_MESSAGES)
 ap_messages_lock = asyncio.Lock()
 
 
+
+calibration_data = {
+    "status_text": "",
+    "heartbeat": "Disconnected",
+    "compasses": [],
+    "calibration_started": False
+}
+
+
+async def get_parameter(param_name):
+    connection.mav.param_request_read_send(
+        connection.target_system, connection.target_component,
+        param_name.encode(), -1
+    )
+    start_time = time.time()
+    while time.time() - start_time < 1:
+        msg = connection.recv_match(type='PARAM_VALUE', blocking=False)
+        if msg and msg.param_id == param_name:
+            return msg.param_value
+        await asyncio.sleep(0.1)
+    logger.warning(f"Timeout getting parameter: {param_name}")
+    return None
+
 async def request_autopilot_capabilities():
     if connection and mav:
         mav.command_long_send(
@@ -56,7 +79,6 @@ async def request_autopilot_capabilities():
             0, 1, 0, 0, 0, 0, 0, 0
         )
         logger.info("Requested autopilot capabilities")
-
 
 async def send_banner_request():
     if connection and mav:
@@ -67,6 +89,146 @@ async def send_banner_request():
         )
         logger.info("Sent banner request")
 
+async def fetch_parameter_file():
+    logger.info("Fetching parameter file (placeholder)")
+
+
+async def detect_compasses():
+    global calibration_data
+    calibration_data["compasses"] = []
+    
+    compass_params = ['COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3']
+    
+    for i, param in enumerate(compass_params):
+        use_compass = await get_parameter(param)
+        if use_compass is not None and use_compass == 1:
+            calibration_data["compasses"].append({
+                "id": i,
+                "name": f"Compass {i+1}",
+                "enabled": True,
+                "progress": 0,
+                "calibrated": False,
+                "report": None
+            })
+            logger.info(f"Detected enabled compass: Compass {i+1}")
+        else:
+            logger.info(f"Compass {i+1} is disabled or not detected")
+
+    if not calibration_data["compasses"]:
+        logger.warning("No enabled compasses detected")
+    else:
+        logger.info(f"Detected compasses: {calibration_data['compasses']}")
+
+
+def update_calibration_data(msg):
+    global calibration_data
+    msg_type = msg.get_type()
+    
+    if msg_type == "MAG_CAL_PROGRESS":
+        compass_id = msg.compass_id
+        for compass in calibration_data["compasses"]:
+            if compass["id"] == compass_id:
+                compass["progress"] = msg.completion_pct
+                logger.debug(f"MAG_CAL_PROGRESS: Compass {compass_id} progress: {msg.completion_pct}%")
+                break
+    elif msg_type == "MAG_CAL_REPORT":
+        compass_id = msg.compass_id
+        for compass in calibration_data["compasses"]:
+            if compass["id"] == compass_id:
+                compass["report"] = {
+                    "compass_id": msg.compass_id,
+                    "cal_status": msg.cal_status,
+                    "autosaved": msg.autosaved,
+                    "fitness": msg.fitness,
+                    "ofs_x": msg.ofs_x,
+                    "ofs_y": msg.ofs_y,
+                    "ofs_z": msg.ofs_z,
+                }
+                compass["calibrated"] = msg.cal_status == mavutil.mavlink.MAG_CAL_SUCCESS
+                logger.info(f"MAG_CAL_REPORT: Compass {compass_id} calibration status: {msg.cal_status}")
+                break
+    elif msg_type == "STATUSTEXT":
+        calibration_data["status_text"] = msg.text
+        logger.info(f"STATUSTEXT: {msg.text}")
+    elif msg_type == "HEARTBEAT":
+        calibration_data["heartbeat"] = "Connected"
+
+async def update_data_continuously():
+    global connection  # Make sure to use the global connection object
+    while True:
+        if connection:
+            try:
+                msg = connection.recv_msg()
+                if msg:
+                    update_calibration_data(msg)
+            except Exception as e:
+                logger.error(f"Error receiving message: {e}")
+        else:
+            logger.warning("No active connection to drone")
+        await asyncio.sleep(0.1) 
+
+@app.route('/start_calibration', methods=['POST'])
+async def start_calibration():
+    try:
+        data = await request.json
+        compass_mask = data.get("compass_mask", 0)
+        
+        connection.mav.command_long_send(
+            connection.target_system,
+            connection.target_component,
+            mavutil.mavlink.MAV_CMD_DO_START_MAG_CAL,
+            0,
+            0,  # mag_mask
+            compass_mask,  # retry
+            1,  # autosave
+            0,  # delay
+            0, 0, 0
+        )
+        calibration_data["calibration_started"] = True
+        for compass in calibration_data["compasses"]:
+            compass["progress"] = 0
+            compass["calibrated"] = False
+            compass["report"] = None
+        logger.info("Magnetometer calibration started")
+        return jsonify({"status": "Magnetometer calibration started"}), 200
+    except Exception as e:
+        logger.error(f"Error starting calibration: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/cancel_calibration', methods=['POST'])
+async def cancel_calibration():
+    try:
+        connection.mav.command_long_send(
+            connection.target_system,
+            connection.target_component,
+            mavutil.mavlink.MAV_CMD_DO_CANCEL_MAG_CAL,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+        calibration_data["calibration_started"] = False
+        logger.info("Magnetometer calibration cancelled")
+        return jsonify({"status": "Magnetometer calibration cancelled"}), 200
+    except Exception as e:
+        logger.error(f"Error cancelling calibration: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/reboot_drone', methods=['POST'])
+async def reboot_drone():
+    try:
+        connection.mav.command_long_send(
+            connection.target_system,
+            connection.target_component,
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+            0, 1, 0, 0, 0, 0, 0, 0
+        )
+        logger.info("Drone reboot command sent")
+        return jsonify({"status": "Drone is rebooting"}), 200
+    except Exception as e:
+        logger.error(f"Error rebooting drone: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/calibration_status', methods=['GET'])
+async def calibration_status():
+    return jsonify(calibration_data), 200
 
 
 async def connect_to_drone(connection_string, baudrate=115200):
@@ -112,6 +274,8 @@ async def connect_drone():
         await request_data_streams()
         await request_autopilot_capabilities()
         await send_banner_request()
+        await fetch_parameter_file()
+        await detect_compasses()
         asyncio.create_task(fetch_drone_data())
         asyncio.create_task(send_heartbeat())
         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
@@ -537,6 +701,14 @@ async def update_parameters_periodically():
 async def startup():
     app.add_background_task(update_parameters_periodically)
     asyncio.create_task(send_heartbeat())
+    asyncio.create_task(update_data_continuously())
+    # try:
+    #     await connect_drone()
+    #     asyncio.create_task(send_heartbeat())
+    #     asyncio.create_task(update_data_continuously())
+    # except Exception as e:
+    #     logger.error(f"Startup failed: {e}")
+    #     raise
     
 @app.route("/fetch_parameters")
 async def fetch_parameters():
@@ -553,7 +725,6 @@ async def get_parameters():
         "parameters": list(parameters.items()), 
         "total": total_params
     })
-
 
 
 
