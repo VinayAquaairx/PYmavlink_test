@@ -181,7 +181,7 @@ async def get_connection_status():
 async def periodic_connection_check():
     while True:
         if connection:
-            if time.time() - last_heartbeat_time > 5:  # 5 seconds without heartbeat
+            if time.time() - last_heartbeat_time > 5:
                 logger.warning("No heartbeat received for 5 seconds. Attempting reconnection.")
                 await reconnect_drone()
         await asyncio.sleep(1)
@@ -794,6 +794,7 @@ async def set_position(position):
 
 #Compass calibration
 async def get_parameter(param_name):
+    logger.debug(f"Requesting parameter: {param_name}")
     connection.mav.param_request_read_send(
         connection.target_system, connection.target_component,
         param_name.encode(), -1
@@ -802,6 +803,7 @@ async def get_parameter(param_name):
     while time.time() - start_time < 1:
         msg = connection.recv_match(type='PARAM_VALUE', blocking=False)
         if msg and msg.param_id == param_name:
+            logger.debug(f"Received parameter {param_name}: {msg.param_value}")
             return msg.param_value
         await asyncio.sleep(0.1)
     logger.warning(f"Timeout getting parameter: {param_name}")
@@ -835,12 +837,7 @@ async def start_calibration():
             connection.target_system,
             connection.target_component,
             mavutil.mavlink.MAV_CMD_DO_START_MAG_CAL,
-            0,
-            0, 
-            compass_mask, 
-            1, 
-            0, 
-            0, 0, 0
+            0, 0, compass_mask, 1, 0, 0, 0, 0
         )
         drone_status["calibration_started"] = True
         for compass in drone_status["compasses"]:
@@ -895,7 +892,11 @@ async def update_cali_data_continuously():
 
 @app.route('/calibration_status', methods=['GET'])
 async def calibration_status():
-    return jsonify(drone_status), 200
+    logger.debug(f"Calibration status request. Current status: {drone_status}")
+    return jsonify({
+        **drone_status,
+        "connection_status": "Connected" if connection else "Disconnected"
+    }), 200
 
 @app.route('/cancel_calibration', methods=['POST'])
 async def cancel_calibration():
@@ -932,56 +933,56 @@ async def reboot_drone():
 
 
 # Accel calibration
-async def start_accel_calibration():
-    """Initiate accelerometer calibration."""
-    try:
-        connection.mav.command_long_send(
-            connection.target_system, connection.target_component,
-            mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
-            0, 0, 0, 0, 0, 1, 0, 0
-        )
-        return "Accelerometer calibration started."
-    except Exception as e:
-        print(f"Error starting calibration: {e}")
-        return "Error starting calibration."
+# async def start_accel_calibration():
+#     """Initiate accelerometer calibration."""
+#     try:
+#         connection.mav.command_long_send(
+#             connection.target_system, connection.target_component,
+#             mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+#             0, 0, 0, 0, 0, 1, 0, 0
+#         )
+#         return "Accelerometer calibration started."
+#     except Exception as e:
+#         print(f"Error starting calibration: {e}")
+#         return "Error starting calibration."
 
-async def send_calibration_step(position):
-    """Send specific accelerometer calibration position."""
-    try:
-        connection.mav.command_long_send(
-            connection.target_system, connection.target_component,
-            mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS,
-            0, ACCEL_CAL_POSITIONS[position], 0, 0, 0, 0, 0, 0
-        )
-        return f"Position {position} set for accelerometer calibration."
-    except Exception as e:
-        print(f"Error setting position: {e}")
-        return f"Error setting position: {position}"
+# async def send_calibration_step(position):
+#     """Send specific accelerometer calibration position."""
+#     try:
+#         connection.mav.command_long_send(
+#             connection.target_system, connection.target_component,
+#             mavutil.mavlink.MAV_CMD_ACCELCAL_VEHICLE_POS,
+#             0, ACCEL_CAL_POSITIONS[position], 0, 0, 0, 0, 0, 0
+#         )
+#         return f"Position {position} set for accelerometer calibration."
+#     except Exception as e:
+#         print(f"Error setting position: {e}")
+#         return f"Error setting position: {position}"
 
-async def get_calibration_status():
-    """Monitor the calibration status from the drone."""
-    while True:
-        if connection is not None:
-            try:
-                msg = connection.recv_match(type='STATUSTEXT', blocking=True, timeout=1)
-                if msg:
-                    # await websocket.send_json({"status": msg.text})
-                    yield f"data: {msg.text}\n\n"
-            except Exception as e:
-                print(f"Error during status update: {e}")
-                await connect_to_drone()
-        await asyncio.sleep(1)
+# async def get_calibration_status():
+#     """Monitor the calibration status from the drone."""
+#     while True:
+#         if connection is not None:
+#             try:
+#                 msg = connection.recv_match(type='STATUSTEXT', blocking=True, timeout=1)
+#                 if msg:
+#                     # await websocket.send_json({"status": msg.text})
+#                     yield f"data: {msg.text}\n\n"
+#             except Exception as e:
+#                 print(f"Error during status update: {e}")
+#                 await connect_to_drone()
+#         await asyncio.sleep(1)
 
-@app.route('/calibrate', methods=['POST'])
-async def calibrate():
-    """Handle the initial calibration request."""
-    result = await start_accel_calibration()
-    return jsonify({"message": result})
+# @app.route('/calibrate', methods=['POST'])
+# async def calibrate():
+#     """Handle the initial calibration request."""
+#     result = await start_accel_calibration()
+#     return jsonify({"message": result})
 
-@app.route('/sse/calibration')
-async def sse_calibration():
-    """Server-Sent Events endpoint for calibration status."""
-    return Response(get_calibration_status(), content_type='text/event-stream')
+# @app.route('/sse/calibration')
+# async def sse_calibration():
+#     """Server-Sent Events endpoint for calibration status."""
+#     return Response(get_calibration_status(), content_type='text/event-stream')
 
 
 
