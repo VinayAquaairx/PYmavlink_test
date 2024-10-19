@@ -9,7 +9,7 @@ logging.basicConfig(level=logging.DEBUG, format='%(asctime)s - %(levelname)s - %
 logger = logging.getLogger(__name__)
 
 app = Quart(__name__)
-app = cors(app)
+app = cors(app, allow_origin="http://localhost:5173", allow_credentials=True)
 
 drone = None
 
@@ -70,7 +70,7 @@ async def send_banner_request():
     logger.info("Sent banner request")
 
 async def fetch_parameter_file():
-    logger.info("Fetching parameter file (placeholder)")
+    logger.info("Fetching parameter file (placeholder)") 
 
 async def detect_compasses():
     global calibration_data
@@ -97,109 +97,6 @@ async def detect_compasses():
         logger.warning("No enabled compasses detected")
     else:
         logger.info(f"Detected compasses: {calibration_data['compasses']}")
-
-def update_calibration_data(msg):
-    global calibration_data
-    msg_type = msg.get_type()
-    
-    if msg_type == "MAG_CAL_PROGRESS":
-        compass_id = msg.compass_id
-        for compass in calibration_data["compasses"]:
-            if compass["id"] == compass_id:
-                compass["progress"] = msg.completion_pct
-                logger.debug(f"MAG_CAL_PROGRESS: Compass {compass_id} progress: {msg.completion_pct}%")
-                break
-    elif msg_type == "MAG_CAL_REPORT":
-        compass_id = msg.compass_id
-        for compass in calibration_data["compasses"]:
-            if compass["id"] == compass_id:
-                compass["report"] = {
-                    "compass_id": msg.compass_id,
-                    "cal_status": msg.cal_status,
-                    "autosaved": msg.autosaved,
-                    "fitness": msg.fitness,
-                    "ofs_x": msg.ofs_x,
-                    "ofs_y": msg.ofs_y,
-                    "ofs_z": msg.ofs_z,
-                }
-                compass["calibrated"] = msg.cal_status == mavutil.mavlink.MAG_CAL_SUCCESS
-                logger.info(f"MAG_CAL_REPORT: Compass {compass_id} calibration status: {msg.cal_status}")
-                break
-    elif msg_type == "STATUSTEXT":
-        calibration_data["status_text"] = msg.text
-        logger.info(f"STATUSTEXT: {msg.text}")
-    elif msg_type == "HEARTBEAT":
-        calibration_data["heartbeat"] = "Connected"
-
-async def update_data_continuously():
-    while True:
-        msg = drone.recv_msg()
-        if msg:
-            update_calibration_data(msg)
-        await asyncio.sleep(0.01)
-
-@app.route('/start_calibration', methods=['POST'])
-async def start_calibration():
-    try:
-        data = await request.json
-        compass_mask = data.get("compass_mask", 0)
-        
-        drone.mav.command_long_send(
-            drone.target_system,
-            drone.target_component,
-            mavutil.mavlink.MAV_CMD_DO_START_MAG_CAL,
-            0,
-            0,  # mag_mask
-            compass_mask,  # retry
-            1,  # autosave
-            0,  # delay
-            0, 0, 0
-        )
-        calibration_data["calibration_started"] = True
-        for compass in calibration_data["compasses"]:
-            compass["progress"] = 0
-            compass["calibrated"] = False
-            compass["report"] = None
-        logger.info("Magnetometer calibration started")
-        return jsonify({"status": "Magnetometer calibration started"}), 200
-    except Exception as e:
-        logger.error(f"Error starting calibration: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/cancel_calibration', methods=['POST'])
-async def cancel_calibration():
-    try:
-        drone.mav.command_long_send(
-            drone.target_system,
-            drone.target_component,
-            mavutil.mavlink.MAV_CMD_DO_CANCEL_MAG_CAL,
-            0, 0, 0, 0, 0, 0, 0, 0
-        )
-        calibration_data["calibration_started"] = False
-        logger.info("Magnetometer calibration cancelled")
-        return jsonify({"status": "Magnetometer calibration cancelled"}), 200
-    except Exception as e:
-        logger.error(f"Error cancelling calibration: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/reboot_drone', methods=['POST'])
-async def reboot_drone():
-    try:
-        drone.mav.command_long_send(
-            drone.target_system,
-            drone.target_component,
-            mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
-            0, 1, 0, 0, 0, 0, 0, 0
-        )
-        logger.info("Drone reboot command sent")
-        return jsonify({"status": "Drone is rebooting"}), 200
-    except Exception as e:
-        logger.error(f"Error rebooting drone: {str(e)}")
-        return jsonify({"error": str(e)}), 500
-
-@app.route('/calibration_status', methods=['GET'])
-async def calibration_status():
-    return jsonify(calibration_data), 200
 
 async def connect_drone():
     global drone
@@ -247,6 +144,108 @@ async def startup():
     except Exception as e:
         logger.error(f"Startup failed: {e}")
         raise
+
+
+
+
+
+@app.route('/start_calibration', methods=['POST'])
+async def start_calibration():
+    try:
+        data = await request.json
+        compass_mask = data.get("compass_mask", 0)
+        
+        drone.mav.command_long_send(
+            drone.target_system,
+            drone.target_component,
+            mavutil.mavlink.MAV_CMD_DO_START_MAG_CAL,
+            0, 0, compass_mask, 1, 0, 0, 0, 0
+        )
+        calibration_data["calibration_started"] = True
+        for compass in calibration_data["compasses"]:
+            compass["progress"] = 0
+            compass["calibrated"] = False
+            compass["report"] = None
+        logger.info("Magnetometer calibration started")
+        return jsonify({"status": "Magnetometer calibration started"}), 200
+    except Exception as e:
+        logger.error(f"Error starting calibration: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/calibration_status', methods=['GET'])
+async def calibration_status():
+    return jsonify(calibration_data), 200
+
+def update_calibration_data(msg):
+    global calibration_data
+    msg_type = msg.get_type()
+    
+    if msg_type == "MAG_CAL_PROGRESS":
+        compass_id = msg.compass_id
+        for compass in calibration_data["compasses"]:
+            if compass["id"] == compass_id:
+                compass["progress"] = msg.completion_pct
+                logger.debug(f"MAG_CAL_PROGRESS: Compass {compass_id} progress: {msg.completion_pct}%")
+                break
+    elif msg_type == "MAG_CAL_REPORT":
+        compass_id = msg.compass_id
+        for compass in calibration_data["compasses"]:
+            if compass["id"] == compass_id:
+                compass["report"] = {
+                    "compass_id": msg.compass_id,
+                    "cal_status": msg.cal_status,
+                    "autosaved": msg.autosaved,
+                    "fitness": msg.fitness,
+                    "ofs_x": msg.ofs_x,
+                    "ofs_y": msg.ofs_y,
+                    "ofs_z": msg.ofs_z,
+                }
+                compass["calibrated"] = msg.cal_status == mavutil.mavlink.MAG_CAL_SUCCESS
+                logger.info(f"MAG_CAL_REPORT: Compass {compass_id} calibration status: {msg.cal_status}")
+                break
+    elif msg_type == "STATUSTEXT":
+        calibration_data["status_text"] = msg.text
+        logger.info(f"STATUSTEXT: {msg.text}")
+    elif msg_type == "HEARTBEAT":
+        calibration_data["heartbeat"] = "Connected"
+
+async def update_data_continuously():
+    while True:
+        msg = drone.recv_msg()
+        if msg:
+            update_calibration_data(msg)
+        await asyncio.sleep(0.01)
+
+@app.route('/cancel_calibration', methods=['POST'])
+async def cancel_calibration():
+    try:
+        drone.mav.command_long_send(
+            drone.target_system,
+            drone.target_component,
+            mavutil.mavlink.MAV_CMD_DO_CANCEL_MAG_CAL,
+            0, 0, 0, 0, 0, 0, 0, 0
+        )
+        calibration_data["calibration_started"] = False
+        logger.info("Magnetometer calibration cancelled")
+        return jsonify({"status": "Magnetometer calibration cancelled"}), 200
+    except Exception as e:
+        logger.error(f"Error cancelling calibration: {str(e)}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/reboot_drone', methods=['POST'])
+async def reboot_drone():
+    try:
+        drone.mav.command_long_send(
+            drone.target_system,
+            drone.target_component,
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_REBOOT_SHUTDOWN,
+            0, 1, 0, 0, 0, 0, 0, 0
+        )
+        logger.info("Drone reboot command sent")
+        return jsonify({"status": "Drone is rebooting"}), 200
+    except Exception as e:
+        logger.error(f"Error rebooting drone: {str(e)}")
+        return jsonify({"error": str(e)}), 500
 
 if __name__ == '__main__':
     app.run(port=5003)
