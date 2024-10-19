@@ -700,15 +700,15 @@ async def update_parameters_periodically():
 @app.before_serving
 async def startup():
     app.add_background_task(update_parameters_periodically)
-    asyncio.create_task(send_heartbeat())
-    asyncio.create_task(update_data_continuously())
-    # try:
-    #     await connect_drone()
-    #     asyncio.create_task(send_heartbeat())
-    #     asyncio.create_task(update_data_continuously())
-    # except Exception as e:
-    #     logger.error(f"Startup failed: {e}")
-    #     raise
+    # asyncio.create_task(send_heartbeat())
+    # asyncio.create_task(update_data_continuously())
+    try:
+        await connect_to_drone(global_device, global_baudrate)
+        asyncio.create_task(send_heartbeat())
+        asyncio.create_task(update_data_continuously())
+    except Exception as e:
+        logger.error(f"Startup failed: {e}")
+        raise
     
 @app.route("/fetch_parameters")
 async def fetch_parameters():
