@@ -209,6 +209,32 @@ async def request_data_streams():
 
 
 
+async def detect_compasses():
+    global calibration_data
+    calibration_data["compasses"] = []
+    
+    compass_params = ['COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3']
+    
+    for i, param in enumerate(compass_params):
+        use_compass = await get_parameter(param)
+        if use_compass is not None and use_compass == 1:
+            calibration_data["compasses"].append({
+                "id": i,
+                "name": f"Compass {i+1}",
+                "enabled": True,
+                "progress": 0,
+                "calibrated": False,
+                "report": None
+            })
+            logger.info(f"Detected enabled compass: Compass {i+1}")
+        else:
+            logger.info(f"Compass {i+1} is disabled or not detected")
+
+    if not calibration_data["compasses"]:
+        logger.warning("No enabled compasses detected")
+    else:
+        logger.info(f"Detected compasses: {calibration_data['compasses']}")
+
 async def connect_to_drone(connection_string, baudrate=115200):
     global connection, mav, global_device, global_baudrate, global_protocol, last_heartbeat_time
     try:
@@ -323,35 +349,6 @@ async def connect_drone():
 #         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
 #     except Exception as e:
 #         return jsonify({"status": f"Failed to connect: {str(e)}"}), 500
-
-#vinay sent code
-# @app.route('/connect', methods=['POST'])
-# async def connect_drone():
-#     global drone, calibration_status
-#     while True:
-#         try:
-#             # Use the appropriate connection string for your setup
-#             drone = mavutil.mavlink_connection('tcp:192.168.4.1:8888')
-#             # drone = mavutil.mavlink_connection('udp:127.0.0.1:14550')
-#             msg = await asyncio.to_thread(drone.wait_heartbeat, timeout=10)
-#             if msg:
-#                     logger.info(f"Heartbeat from system (system {drone.target_system} component {drone.target_component})")
-#                     calibration_status["system_id"] = drone.target_system
-#                     calibration_status["component_id"] = drone.target_component
-#                     calibration_status["connected"] = True
-#                     calibration_status["message"] = "Connected to drone."
-
-#                     await request_data_streams()
-#                     await request_autopilot_version()
-#                     await send_banner_request()
-#                     break
-#             else:
-#                 logger.error("No heartbeat received")
-#         except Exception as e:
-#             logger.error(f"Error connecting to drone: {e}")
-#             calibration_status["connected"] = False
-#             calibration_status["message"] = f"Failed to connect: {e}"
-#         await asyncio.sleep(5)
 
 async def send_heartbeat():
     while True:
@@ -1047,32 +1044,6 @@ async def set_position():
 
 
 #Compass Calibration
-async def detect_compasses():
-    global calibration_data
-    calibration_data["compasses"] = []
-    
-    compass_params = ['COMPASS_USE', 'COMPASS_USE2', 'COMPASS_USE3']
-    
-    for i, param in enumerate(compass_params):
-        use_compass = await get_parameter(param)
-        if use_compass is not None and use_compass == 1:
-            calibration_data["compasses"].append({
-                "id": i,
-                "name": f"Compass {i+1}",
-                "enabled": True,
-                "progress": 0,
-                "calibrated": False,
-                "report": None
-            })
-            logger.info(f"Detected enabled compass: Compass {i+1}")
-        else:
-            logger.info(f"Compass {i+1} is disabled or not detected")
-
-    if not calibration_data["compasses"]:
-        logger.warning("No enabled compasses detected")
-    else:
-        logger.info(f"Detected compasses: {calibration_data['compasses']}")
-
 def update_calibration_data(msg):
     global calibration_data
     msg_type = msg.get_type()
@@ -1185,10 +1156,7 @@ async def reboot_drone():
 
 @app.route('/calibration_status', methods=['GET'])
 async def calibration_status():
-    return jsonify({
-        "data": calibration_data,
-        "status": calibration_status
-    }), 200
+    return jsonify(calibration_data)
 
 
 
