@@ -379,6 +379,7 @@ async def fetch_drone_data():
                         packet_count += 1
                         await update_drone_status(msg)
                         await process_mavlink_message(msg)
+                        update_calibration_data(msg)
                         if msg.get_type() == 'HEARTBEAT':
                             last_heartbeat_time = time.time()
                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
@@ -700,15 +701,7 @@ async def update_parameters_periodically():
 @app.before_serving
 async def startup():
     app.add_background_task(update_parameters_periodically)
-    # asyncio.create_task(send_heartbeat())
-    # asyncio.create_task(update_data_continuously())
-    try:
-        await connect_to_drone(global_device, global_baudrate)
-        asyncio.create_task(send_heartbeat())
-        asyncio.create_task(update_data_continuously())
-    except Exception as e:
-        logger.error(f"Startup failed: {e}")
-        raise
+    asyncio.create_task(send_heartbeat())
     
 @app.route("/fetch_parameters")
 async def fetch_parameters():
@@ -745,26 +738,6 @@ async def process_mavlink_message(msg):
         cmd_message = f"Got COMMAND_ACK: {cmd_name}: {result_name}"
         print(cmd_message)
 
-# async def request_data_streams():
-#     if connection and mav:
-#         mav.request_data_stream_send(
-#             connection.target_system, connection.target_component,
-#             mavutil.mavlink.MAV_DATA_STREAM_ALL, 10, 1
-#         )
-
-#         message_types = [
-#             mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS, mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
-#             mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
-#             mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
-#         ]
-
-#         for msg_id in message_types:
-#             mav.command_long_send(
-#                 connection.target_system, connection.target_component,
-#                 mavutil.mavlink.MAV_CMD_SET_MESSAGE_INTERVAL,
-#                 0, msg_id, 100000, 0, 0, 0, 0, 0 
-#             )
-
 async def request_data_streams():
     if connection and mav:
         # Request all data streams
@@ -775,19 +748,9 @@ async def request_data_streams():
 
         # Request specific message intervals
         message_types = [
-            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,
-            mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,
-            mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,
-            mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,
-            mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
-            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,
-            mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,
-            mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS,
-            mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
-            mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,
-            mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,
-            mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,
-            mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
+            mavutil.mavlink.MAVLINK_MSG_ID_HEARTBEAT,mavutil.mavlink.MAVLINK_MSG_ID_RADIO_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_BATTERY_STATUS,mavutil.mavlink.MAVLINK_MSG_ID_GPS_RAW_INT,mavutil.mavlink.MAVLINK_MSG_ID_GLOBAL_POSITION_INT,
+            mavutil.mavlink.MAVLINK_MSG_ID_ATTITUDE,mavutil.mavlink.MAVLINK_MSG_ID_VFR_HUD,mavutil.mavlink.MAVLINK_MSG_ID_RC_CHANNELS, mavutil.mavlink.MAVLINK_MSG_ID_DISTANCE_SENSOR,
+            mavutil.mavlink.MAVLINK_MSG_ID_AUTOPILOT_VERSION,mavutil.mavlink.MAVLINK_MSG_ID_HOME_POSITION,mavutil.mavlink.MAVLINK_MSG_ID_SERVO_OUTPUT_RAW,mavutil.mavlink.MAVLINK_MSG_ID_EXTENDED_SYS_STATE
         ]
 
         for msg_id in message_types:
@@ -799,13 +762,8 @@ async def request_data_streams():
 
         # Request additional data streams with specific rates
         message_rates = {
-            mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,
-            mavutil.mavlink.MAV_DATA_STREAM_POSITION: 2,
-            mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 4,
-            mavutil.mavlink.MAV_DATA_STREAM_EXTRA2: 4,
-            mavutil.mavlink.MAV_DATA_STREAM_EXTRA3: 2,
-            mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS: 2,
-            mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,mavutil.mavlink.MAV_DATA_STREAM_POSITION: 2,mavutil.mavlink.MAV_DATA_STREAM_EXTRA1: 4,mavutil.mavlink.MAV_DATA_STREAM_EXTRA2: 4,mavutil.mavlink.MAV_DATA_STREAM_EXTRA3: 2,
+            mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS: 2,mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS: 2,
         }
         
         for stream_id, rate in message_rates.items():
@@ -826,8 +784,6 @@ async def clear_ap_messages():
     async with ap_messages_lock:
         ap_messages.clear()
     return jsonify({"status": "AP messages cleared"}), 200
-
-
 
 
 
