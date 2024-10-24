@@ -10,13 +10,15 @@ from hypercorn.config import Config
 import logging
 import math
 import platform
+import json
 from collections import deque
 
 app = Quart(__name__)
 app = cors(app, 
     allow_origin=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"]
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Content-Type"]
 )
 
 last_heartbeat_time = 0
@@ -73,8 +75,26 @@ accel_calibration_status = {
     "last_command_result": None,
     "system_id": None,
     "component_id": None,
-    "version": None
+    "version": None,
+    "vehicle_type": None,
 }
+
+rc_values = {
+    "channels": {},
+    "last_update": 0
+}
+
+radio_calibration_status = {
+    "is_calibrating": False,
+    "current_step": None,
+    "channel_count": 0,
+    "calibration_data": {},
+    "status_message": "",
+    "last_command_ack": None,
+    "saving_parameters": False
+}
+
+parameters = {}
 
 
 
@@ -84,9 +104,13 @@ class CommandQueue:
     def __init__(self):
         self.queue = asyncio.Queue()
         self.waiting_ack = {}
+        self.retry_counts = {} #from radio cali
+        self.max_retries = 3 #from radio cali
 
     async def add_command(self, command, *args):
         await self.queue.put((command, args))
+        if command not in self.retry_counts:
+            self.retry_counts[command] = 0
 
     async def process_queue(self):
         while True:
@@ -95,18 +119,24 @@ class CommandQueue:
                 continue
             try:
                 command, args = await self.queue.get()
-                # Ensure we always have 7 parameters
                 args = list(args) + [0] * (7 - len(args))
+
                 command_id = connection.mav.command_long_encode(
                     connection.target_system, connection.target_component,
                     command, 0, *args
                 ).command
+
                 self.waiting_ack[command_id] = asyncio.get_event_loop().time()
+                self.waiting_ack[command] = { #
+                    'timestamp': asyncio.get_event_loop().time(), # from radio calibration
+                    'args': args #
+                } #
+
                 connection.mav.command_long_send(
                     connection.target_system, connection.target_component,
                     command, 0, *args
                 )
-                logger.info(f"Sent command: {command}")
+                logger.info(f"Sent command: {command} with args: {args}")
             except Exception as e:
                 logger.error(f"Error processing command: {e}")
             await asyncio.sleep(0.1)
@@ -114,15 +144,23 @@ class CommandQueue:
     def ack_command(self, command_id):
         if command_id in self.waiting_ack:
             del self.waiting_ack[command_id]
+            if command_id in self.retry_counts:
+                del self.retry_counts[command_id]
 
     async def retry_commands(self):
         while True:
             current_time = asyncio.get_event_loop().time()
-            for command_id, send_time in list(self.waiting_ack.items()):
-                if current_time - send_time > 3:  # 3 seconds timeout
-                    logger.warning(f"Command {command_id} timed out, retrying")
-                    await self.add_command(command_id)
-                    del self.waiting_ack[command_id]
+
+            for command_id, command_data, send_time in list(self.waiting_ack.items()):
+                if current_time - send_time > 3:
+                    if self.retry_counts.get(command_id, 0) < self.max_retries:
+                        logger.warning(f"Command {command_id} timed out, retry {self.retry_counts[command_id] + 1}/{self.max_retries}")
+                        await self.add_command(command_id, *command_data['args'])
+                        self.retry_counts[command_id] = self.retry_counts.get(command_id, 0) + 1
+                    else:
+                        logger.error(f"Command {command_id} failed after {self.max_retries} retries")
+                        del self.waiting_ack[command_id]
+                        del self.retry_counts[command_id]
             await asyncio.sleep(1)
 
 command_queue = CommandQueue()
@@ -189,6 +227,10 @@ async def fetch_parameter_file():
     logger.info("Fetching parameter file (placeholder)")
 
 async def request_data_streams():
+    """Request essential data streams from the drone"""
+    if not connection or not connection.target_system:
+        return
+    
     streams = {
         mavutil.mavlink.MAV_DATA_STREAM_EXTENDED_STATUS: 2,
         mavutil.mavlink.MAV_DATA_STREAM_POSITION: 2,
@@ -198,6 +240,16 @@ async def request_data_streams():
         mavutil.mavlink.MAV_DATA_STREAM_RAW_SENSORS: 2,
         mavutil.mavlink.MAV_DATA_STREAM_RC_CHANNELS: 2,
     }
+
+    for stream_id, rate in streams.items():
+        connection.mav.request_data_stream_send(
+            connection.target_system,
+            connection.target_component,
+            stream_id,
+            rate,
+            1  # Start sending
+        )
+    logger.info("Data streams requested")
     
 # async def request_autopilot_version():
 #     await command_queue.add_command(
@@ -290,8 +342,10 @@ async def connect_drone():
                 accel_calibration_status["component_id"] = connection.target_component
                 accel_calibration_status["connected"] = True
                 accel_calibration_status["message"] = "Connected to drone."
+                accel_calibration_status["vehicle_type"] = msg.type
 
                 await request_data_streams()
+                # await request_autopilot_version()
                 await request_autopilot_capabilities()
                 await send_banner_request()
                 await fetch_parameter_file()
@@ -302,6 +356,10 @@ async def connect_drone():
 
                 return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
             else:
+                accel_calibration_status["connected"] = False
+                accel_calibration_status["message"] = "No heartbeat received"
+
+                # logger.error("No heartbeat received")
                 return jsonify({"status": "No heartbeat received"}), 500
         except Exception as e:
             logger.error(f"Error connecting to drone: {e}")
@@ -365,7 +423,7 @@ async def send_heartbeat():
         await asyncio.sleep(1)
 
 async def heartbeat_monitor():
-    global calibration_status
+    global accel_calibration_status
     while True:
         if connection is not None:
             try:
@@ -621,6 +679,32 @@ async def command():
         return jsonify({'status': 'unknown_command'}), 400
     
     return jsonify({'status': 'success' if success else 'failed'}), 200 if success else 500
+
+@app.route('/radiostatus', methods=['GET'])
+async def get_radio_status():
+    try:
+        return jsonify(accel_calibration_status)
+    except Exception as e:
+        logger.error(f"Error in status endpoint: {e}")
+        return await jsonify({"error": str(e)}, 500)
+
+@app.route('/rc_channels', methods=['GET'])
+async def get_rc_channels():
+    try:
+        return jsonify(rc_values)
+    except Exception as e:
+        logger.error(f"Error in rc_channels endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/parameters', methods=['GET'])
+async def get_radio_parameters():
+    try:
+        # Filter for RC-related parameters
+        rc_params = {k: v for k, v in parameters.items() if 'RC' in k}
+        return jsonify(rc_params)
+    except Exception as e:
+        logger.error(f"Error in parameters endpoint: {e}")
+        return jsonify({"error": str(e)}), 500
 
 
 
@@ -890,21 +974,83 @@ async def message_handler():
                 msg = await asyncio.to_thread(connection.recv_match, blocking=True, timeout=0.1)
                 if msg:
                     msg_type = msg.get_type()
+
                     if msg_type == 'HEARTBEAT':
                         accel_calibration_status["connected"] = True
+
                     elif msg_type == 'STATUSTEXT':
-                        logger.info(f"STATUSTEXT: {msg.text}")
-                        accel_calibration_status["message"] = msg.text
+                        text = msg.text
+
+                        if isinstance(text, bytes):
+                            text = text.decode('utf-8')
+                        logger.info(f"STATUSTEXT: {text}")
+                        if ('calib' in text.lower() or 'radio' in text.lower() or 'rc' in text.lower()):
+                            radio_calibration_status["status_message"] = text
+                            logger.info(f"STATUSTEXT: {text}")
+                        accel_calibration_status["message"] = text
+
                     elif msg_type == 'COMMAND_ACK':
                         cmd_name = mavutil.mavlink.enums['MAV_CMD'][msg.command].name
                         result_name = MAV_RESULT_MAP.get(msg.result, str(msg.result))
+
+                        command_queue.ack_command(msg.command)
+
+                        update_calibration_status(msg.command, msg.result)
+                        radio_calibration_status["last_command_ack"] = {
+                            "command": msg.command,
+                            "result": msg.result,
+                            "time": time.time()
+                        }
+
+                        if msg.command == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
+                            if radio_calibration_status["saving_parameters"]:
+                                pass
+                            elif msg.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
+                                if radio_calibration_status["is_calibrating"]:
+                                    radio_calibration_status["status_message"] = "Calibration in progress. Move sticks to extremes."
+                                else:
+                                    radio_calibration_status["status_message"] = "Calibration completed."
+                            else:
+                                if not radio_calibration_status["saving_parameters"]:
+                                    radio_calibration_status["status_message"] = f"Calibration command failed: result {msg.result}"
+
                         logger.info(f"Got COMMAND_ACK: {cmd_name}: {result_name}")
                         command_queue.ack_command(msg.command)
-                        update_calibration_status(msg.command, msg.result)
+
                     elif msg_type == 'AUTOPILOT_VERSION':
                         flight_sw_version = ".".join(str(x) for x in msg.flight_sw_version[:3])
                         accel_calibration_status["version"] = f"ArduCopter V{flight_sw_version}"
                         logger.info(f"Drone version: {accel_calibration_status['version']}")
+
+                    elif msg_type == 'RC_CHANNELS':
+                        rc_values['channel_count'] = msg.chancount
+                        rc_values['last_update'] = time.time()
+                        
+                        for i in range(msg.chancount):
+                            chan_num = i + 1
+                            value = getattr(msg, f'chan{chan_num}_raw', None)
+                            if value is not None:
+                                rc_values['channels'][chan_num] = value
+                                
+                                if radio_calibration_status["is_calibrating"] and not radio_calibration_status["saving_parameters"]:
+                                    if chan_num not in radio_calibration_status["calibration_data"]:
+                                        radio_calibration_status["calibration_data"][chan_num] = {
+                                            "min": value,
+                                            "max": value,
+                                            "trim": value
+                                        }
+                                    else:
+                                        cal_data = radio_calibration_status["calibration_data"][chan_num]
+                                        cal_data["min"] = min(cal_data["min"], value)
+                                        cal_data["max"] = max(cal_data["max"], value)
+                                        if radio_calibration_status["saving_parameters"]:
+                                            cal_data["trim"] = value
+
+                    elif msg_type == 'PARAM_VALUE':
+                        if radio_calibration_status["saving_parameters"]:
+                            param_id = msg.param_id.decode('utf-8') if isinstance(msg.param_id, bytes) else msg.param_id
+                            if param_id.startswith('RC') and ('MIN' in param_id or 'MAX' in param_id or 'TRIM' in param_id):
+                                logger.info(f"Parameter {param_id} saved successfully")
             except Exception as e:
                 logger.error(f"Message handling error: {e}")
         await asyncio.sleep(0.01)
@@ -1162,7 +1308,7 @@ async def calibration_status():
 
 
 
-#Accel calibration
+#Accel calibration 
 def update_calibration_status(command, result):
     global accel_calibration_status
     cmd_name = MAV_CMD_MAP.get(command, str(command))
@@ -1263,6 +1409,107 @@ async def get_calibration_status():
 
 
 
+#radio calibration - infrontend change /status -> /radiostatus, /calibration/start,save,cancel,status -> /radiocalibration/start,save,cancel,status, get_status -> get_radio_status, get_parameters -> get_radio_parameters, get_calibration_status -> get_radio_calibration_status
+async def start_radio_calibration():
+    """Start RC calibration process"""
+    global radio_calibration_status
+    try:
+        # Request RC calibration - param4=1 for RC calibration
+        await command_queue.add_command(
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+            0, 0, 0, 1, 0, 0, 0  # param4 = 1 for RC calibration
+        )
+        radio_calibration_status["is_calibrating"] = True
+        radio_calibration_status["current_step"] = "waiting_for_movement"
+        radio_calibration_status["calibration_data"] = {}
+        radio_calibration_status["status_message"] = "Calibration started. Move all sticks to their extreme positions."
+        logger.info("RC calibration started")
+        return True
+    except Exception as e:
+        logger.error(f"Failed to start calibration: {e}")
+        radio_calibration_status["status_message"] = f"Failed to start calibration: {e}"
+        return False
+    
+async def save_radio_calibration():
+    """Save RC calibration data"""
+    global radio_calibration_status
+    try:
+        radio_calibration_status["saving_parameters"] = True
+        parameters_saved = True
+        
+        for channel, data in radio_calibration_status["calibration_data"].items():
+            # Set parameters using PARAM_SET message
+            for param_type, value in [("MIN", data["min"]), ("MAX", data["max"]), ("TRIM", data["trim"])]:
+                param_id = f"RC{channel}_{param_type}"
+                logger.info(f"Setting parameter {param_id} to {value}")
+                connection.mav.param_set_send(
+                    connection.target_system,
+                    connection.target_component,
+                    param_id.encode(),
+                    float(value),
+                    mavutil.mavlink.MAV_PARAM_TYPE_REAL32
+                )
+                # Wait for parameter acknowledgment
+                await asyncio.sleep(0.1)
+        
+        # Wait for all parameters to be saved
+        await asyncio.sleep(1)
+        
+        # Stop calibration only after parameters are saved
+        await command_queue.add_command(
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+            0, 0, 0, 0, 0, 0, 0  # All zeros to stop calibration
+        )
+        
+        radio_calibration_status["is_calibrating"] = False
+        radio_calibration_status["saving_parameters"] = False
+        radio_calibration_status["status_message"] = "Calibration saved successfully"
+        return True
+        
+    except Exception as e:
+        logger.error(f"Failed to save calibration: {e}")
+        radio_calibration_status["status_message"] = f"Failed to save calibration: {e}"
+        radio_calibration_status["saving_parameters"] = False
+        return False
+
+async def cancel_radio_calibration():
+    """Cancel RC calibration process"""
+    global radio_calibration_status
+    try:
+        await command_queue.add_command(
+            mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION,
+            0, 0, 0, 0, 0, 0, 0  # All zeros to stop calibration
+        )
+        radio_calibration_status["is_calibrating"] = False
+        radio_calibration_status["status_message"] = "Calibration cancelled"
+        return True
+    except Exception as e:
+        logger.error(f"Failed to cancel calibration: {e}")
+        radio_calibration_status["status_message"] = f"Failed to cancel calibration: {e}"
+        return False
+    
+@app.route('/radiocalibration/start', methods=['POST'])
+async def start_calibration_endpoint():
+    success = await start_radio_calibration()
+    return jsonify({"success": success, "state": radio_calibration_status})
+
+@app.route('/radiocalibration/save', methods=['POST'])
+async def save_calibration_endpoint():
+    success = await save_radio_calibration()
+    return jsonify({"success": success, "state": radio_calibration_status})
+
+@app.route('/radiocalibration/cancel', methods=['POST'])
+async def cancel_calibration_endpoint():
+    success = await cancel_radio_calibration()
+    return jsonify({"success": success, "state": radio_calibration_status})
+
+@app.route('/radiocalibration/status', methods=['GET'])
+async def get_radio_calibration_status():
+    return jsonify(radio_calibration_status)
+
+
+
+
 
 async def main():
     global command_queue
@@ -1275,6 +1522,7 @@ async def main():
 
     config = Config()
     config.bind = ["127.0.0.1:5001"]
+    # config.cors_allow_origins = ["http://localhost:3001", "http://127.0.0.1:3001"] #from radio calibration
     await serve(app, config)
 
 
