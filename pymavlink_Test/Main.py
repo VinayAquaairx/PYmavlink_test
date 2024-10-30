@@ -15,7 +15,7 @@ from collections import deque, defaultdict
 
 app = Quart(__name__)
 app = cors(app, 
-    allow_origin=["http://localhost:5173", "http://localhost:3000"],
+    allow_origin=["http://localhost:5173", "http://localhost:3000", "https://aquaairx.netlify.app"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"]
