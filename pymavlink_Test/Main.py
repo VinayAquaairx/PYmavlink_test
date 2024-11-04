@@ -496,7 +496,6 @@ async def disconnect_drone():
 
 
 
-
 def list_serial_ports():
     if platform.system() == "Windows":
         ports = serial.tools.list_ports.comports()
