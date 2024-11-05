@@ -189,8 +189,6 @@ MAV_CMD_MAP = {
 
 
 
-
-
 async def get_parameter(param_name):
     connection.mav.param_request_read_send(
         connection.target_system, connection.target_component,

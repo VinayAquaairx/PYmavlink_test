@@ -15,7 +15,7 @@ from collections import deque, defaultdict
 
 app = Quart(__name__)
 app = cors(app, 
-    allow_origin=["http://localhost:5173", "http://localhost:3000", "https://aquaairx.netlify.app"],
+    allow_origin=["http://localhost:5173", "http://localhost:3000"],
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type"]
@@ -189,8 +189,6 @@ MAV_CMD_MAP = {
 
 
 
-
-
 async def get_parameter(param_name):
     connection.mav.param_request_read_send(
         connection.target_system, connection.target_component,
@@ -223,15 +221,6 @@ async def send_banner_request():
         )
         logger.info("Sent banner request")
 
-# async def send_banner_request():
-#     await command_queue.add_command(
-#         mavutil.mavlink.MAV_CMD_DO_SEND_BANNER,
-#         0, 0, 0, 0, 0, 0, 0
-#     )
-
-# async def fetch_parameter_file():
-#     logger.info("Fetching parameter file (placeholder)")
-
 async def request_data_streams():
     """Request essential data streams from the drone"""
     if not connection or not connection.target_system:
@@ -256,15 +245,6 @@ async def request_data_streams():
             1  # Start sending
         )
     logger.info("Data streams requested")
-    
-# async def request_autopilot_version():
-#     await command_queue.add_command(
-#         mavutil.mavlink.MAV_CMD_REQUEST_AUTOPILOT_CAPABILITIES,
-#         1, 0, 0, 0, 0, 0, 0
-#     )
-
-
-
 
 
 async def detect_compasses():
@@ -375,45 +355,6 @@ async def connect_drone():
             # return jsonify({"status": f"Failed to connect: {str(e)}"}), 500
         await asyncio.sleep(5)
 
-#existing code 
-# @app.route('/connect', methods=['POST'])
-# async def connect_drone():
-#     global connection, home_position_set, mav, global_device, global_baudrate, global_protocol, last_heartbeat_time, calibration_status
-#     data = await request.get_json()
-#     protocol = data.get("protocol")
-    
-#     if protocol == "serial":
-#         device = data.get("port")
-#         baudrate = data.get("baudrate", 115200)
-#     elif protocol in ["udp", "tcp"]:
-#         ip = data.get("ip")
-#         port = data.get("port")
-#         device = f"{protocol}:{ip}:{port}"
-#     else:
-#         return jsonify({"status": "Invalid connection type"}), 400
-#     try:
-#         # NEW: Store connection details globally
-#         global_device = device
-#         global_baudrate = baudrate if protocol == 'serial' else None
-#         global_protocol = protocol
-#         connection = mavutil.mavlink_connection(device, baud=global_baudrate, source_system=255, source_component=0, autoreconnect=True, timeout=60)
-#         mav = mavlink2.MAVLink(connection)
-#         mav.srcSystem = 255
-#         mav.srcComponent = 0
-#         await asyncio.to_thread(connection.wait_heartbeat, timeout=10)
-#         last_heartbeat_time = time.time()
-#         home_position_set = False
-#         await request_data_streams()
-#         await request_autopilot_capabilities()
-#         await send_banner_request()
-#         await fetch_parameter_file()
-#         await detect_compasses()
-#         asyncio.create_task(fetch_drone_data())
-#         asyncio.create_task(send_heartbeat())
-#         return jsonify({"status": f"Connected to drone via {protocol.upper()}"}), 200
-#     except Exception as e:
-#         return jsonify({"status": f"Failed to connect: {str(e)}"}), 500
-
 async def send_heartbeat():
     while True:
         if connection and mav:
@@ -496,6 +437,7 @@ async def disconnect_drone():
 
 
 
+
 def list_serial_ports():
     if platform.system() == "Windows":
         ports = serial.tools.list_ports.comports()
@@ -525,36 +467,6 @@ def reset_telemetry_values():
     total_packets = 0
     connection_quality = 0
 
-# async def fetch_drone_data():
-#     global connection, drone_status, last_heartbeat_time, packet_count, total_packets, connection_quality
-#     heartbeat_timeout = 3
-#     while True:
-#         if connection:
-#             try:
-#                 msg = await asyncio.to_thread(connection.recv_msg)
-#                 if msg:
-#                     total_packets += 1
-#                     if msg.get_type() != 'BAD_DATA':
-#                         packet_count += 1
-#                         await update_drone_status(msg)
-#                         await process_mavlink_message(msg)
-#                         update_calibration_data(msg)
-#                         if msg.get_type() == 'HEARTBEAT':
-#                             last_heartbeat_time = time.time()
-#                     connection_quality = (packet_count / total_packets) * 100 if total_packets > 0 else 0
-#                 if time.time() - last_heartbeat_time > heartbeat_timeout:
-#                     logger.warning("Heartbeat lost. Clearing drone status.")
-#                     # reset_telemetry_values()
-#                     await reconnect_drone()
-#             except Exception as e:
-#                 logger.error(f"Error receiving data: {e}")
-#                 drone_status["connection_status"] = "Error"
-#                 # await reconnect_drone()
-#                 reset_telemetry_values()
-#         else:
-#             logger.warning("No active connection")
-#             reset_telemetry_values()
-#             await asyncio.sleep(1)
 
 async def fetch_drone_data():
     """Main message handling function that processes all incoming MAVLink messages"""
@@ -923,50 +835,17 @@ async def send_command_long(command, param1=0, param2=0, param3=0, param4=0, par
             return ack.result == mavutil.mavlink.MAV_RESULT_ACCEPTED
     return False
 
-# async def request_full_parameters():
-#     global parameters, total_params
-#     parameters.clear()
-#     fetch_complete.clear()
-#     total_params = 0
-#     if connection and mav:
-#         try:
-#             mav.param_request_list_send(
-#                 connection.target_system, connection.target_component
-#             )
-#             while True:
-#                 msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
-#                 if msg:
-#                     parameters[msg.param_id] = {
-#                         'value': msg.param_value,
-#                     }
-#                     total_params = msg.param_count
-#                     if len(parameters) == total_params:
-#                         break
-#                 else:
-#                     if total_params > 0 and len(parameters) == total_params:
-#                         break
-#                     if len(parameters) > 0:
-#                         await asyncio.sleep(1)
-#                     else:
-#                         break
-#         except Exception as e:
-#             print(f"Error fetching parameters: {str(e)}")
-#         finally:
-#             fetch_complete.set()
-
 
 
 async def request_full_parameters():
     global parameters, param_count, param_fetch_start, missing_parameters
-    
-    # Reset parameter fetch state
+
     parameters.clear()
     missing_parameters.clear()
     param_count = 0
     param_fetch_start = time.time()
     
     try:
-        # Request parameter list
         if connection and connection.mav:
             connection.mav.param_request_list_send(
                 connection.target_system,
@@ -987,21 +866,17 @@ async def request_full_parameters():
                 )
                 
                 if msg is None:
-                    # Check if we have all parameters
                     if param_count > 0 and len(parameters) >= param_count:
                         break
                     continue
 
                 if msg.get_type() == 'PARAM_VALUE':
-                    # Update total parameter count
                     param_count = msg.param_count
                     
-                    # Extract parameter information
                     param_id = msg.param_id.decode('utf-8') if isinstance(msg.param_id, bytes) else msg.param_id
                     param_type = msg.param_type
                     param_value = get_param_value(msg)
                     
-                    # Store parameter
                     parameters[param_id] = {
                         'value': param_value,
                         'type': param_type,
@@ -1093,47 +968,11 @@ async def request_missing_parameters():
             except Exception as e:
                 logger.error(f"Error requesting parameter index {idx}: {e}")
                 
-        await asyncio.sleep(0.1)  # Prevent overwhelming the connection
+        await asyncio.sleep(0.1)
     
     if missing_parameters:
         logger.warning(f"Could not retrieve {len(missing_parameters)} parameters after {MAX_RETRIES} retries")
 
-
-# @app.route("/set_parameter", methods=['POST'])
-# async def set_parameter():
-#     data = await request.get_json()
-#     param_id = data.get('param_id')
-#     param_value = data.get('param_value')
-    
-#     if not param_id or param_value is None:
-#         return jsonify({"error": "Missing param_id or param_value"}), 400
-    
-#     if connection and mav:
-#         try:
-#             # Convert param_value to float (MAVLink uses float for all parameters)
-#             param_value_float = float(param_value)
-            
-#             # Send parameter set command
-#             mav.param_set_send(
-#                 connection.target_system,
-#                 connection.target_component,
-#                 param_id.encode('utf-8'),
-#                 param_value_float,
-#                 mavutil.mavlink.MAV_PARAM_TYPE_REAL32
-#             )
-            
-#             # Wait for PARAM_VALUE message to confirm the change
-#             msg = await asyncio.to_thread(connection.recv_match, type='PARAM_VALUE', blocking=True, timeout=5)
-#             if msg and msg.param_id == param_id:
-#                 # Update local parameter dictionary
-#                 parameters[param_id]['value'] = msg.param_value
-#                 return jsonify({"status": "success", "new_value": msg.param_value}), 200
-#             else:
-#                 return jsonify({"error": "Parameter set failed or timed out"}), 500
-#         except Exception as e:
-#             return jsonify({"error": str(e)}), 500
-#     else:
-#         return jsonify({"error": "No active connection"}), 400
     
 async def set_parameter(param_id, param_value):
     """Set parameter with proper type handling and verification"""
@@ -1247,16 +1086,6 @@ async def fetch_parameters():
         asyncio.create_task(request_full_parameters())
     return jsonify({"status": "Requesting parameters"})
 
-# @app.route("/get_parameters")
-# async def get_parameters():
-#     if not fetch_complete.is_set():
-#         return jsonify({"status": "fetching", "parameters": [], "total": total_params})
-#     return jsonify({
-#         "status": "complete", 
-#         "parameters": list(parameters.items()), 
-#         "total": total_params
-#     })
-
 
 @app.route("/get_parameters")
 async def get_parameters():
@@ -1341,101 +1170,6 @@ async def clear_ap_messages():
     async with ap_messages_lock:
         ap_messages.clear()
     return jsonify({"status": "AP messages cleared"}), 200
-
-# async def message_handler():
-#     global accel_calibration_status, radio_calibration_status, rc_values, calibration_data
-#     while True:
-#         if connection:
-#             try:
-#                 msg = await asyncio.to_thread(connection.recv_match, blocking=True, timeout=0.1)
-#                 if msg:
-#                     msg_type = msg.get_type()
-
-#                     # Handle Heartbeat
-#                     if msg_type == 'HEARTBEAT':
-#                         accel_calibration_status["connected"] = True
-#                         radio_calibration_status["is_calibrating"] = True
-
-#                     elif msg_type == 'STATUSTEXT':
-#                         text = msg.text
-#                         if isinstance(text, bytes):
-#                             text = text.decode('utf-8')
-
-#                         logger.info(f"STATUSTEXT: {text}")
-
-#                         if ('calib' in text.lower() or 'radio' in text.lower() or 'rc' in text.lower()):
-#                             radio_calibration_status["status_message"] = text
-#                         accel_calibration_status["message"] = text
-                        
-#                         if 'compass' in text.lower():
-#                             calibration_data["status_text"] = text
-
-#                     elif msg_type == 'COMMAND_ACK':
-#                         cmd_name = mavutil.mavlink.enums['MAV_CMD'][msg.command].name
-#                         result_name = MAV_RESULT_MAP.get(msg.result, str(msg.result))
-
-#                         command_queue.ack_command(msg.command)
-
-#                         update_calibration_status(msg.command, msg.result)
-#                         radio_calibration_status["last_command_ack"] = {
-#                             "command": msg.command,
-#                             "result": msg.result,
-#                             "time": time.time()
-#                         }
-
-#                         if msg.command == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
-#                             if radio_calibration_status["saving_parameters"]:
-#                                 pass
-#                             elif msg.result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-#                                 if radio_calibration_status["is_calibrating"]:
-#                                     radio_calibration_status["status_message"] = "Calibration in progress. Move sticks to extremes."
-#                                 else:
-#                                     radio_calibration_status["status_message"] = "Calibration completed."
-#                             else:
-#                                 if not radio_calibration_status["saving_parameters"]:
-#                                     radio_calibration_status["status_message"] = f"Calibration command failed: result {msg.result}"
-
-#                     elif msg_type == 'AUTOPILOT_VERSION':
-#                         flight_sw_version = ".".join(str(x) for x in msg.flight_sw_version[:3])
-#                         accel_calibration_status["version"] = f"ArduCopter V{flight_sw_version}"
-#                         logger.info(f"Drone version: {accel_calibration_status['version']}")
-
-#                     elif msg_type == 'RC_CHANNELS':
-#                         rc_values['channel_count'] = msg.chancount
-#                         rc_values['last_update'] = time.time()
-                        
-#                         for i in range(msg.chancount):
-#                             chan_num = i + 1
-#                             value = getattr(msg, f'chan{chan_num}_raw', None)
-#                             if value is not None:
-#                                 rc_values['channels'][chan_num] = value
-                                
-#                                 if radio_calibration_status["is_calibrating"] and not radio_calibration_status["saving_parameters"]:
-#                                     if chan_num not in radio_calibration_status["calibration_data"]:
-#                                         radio_calibration_status["calibration_data"][chan_num] = {
-#                                             "min": value,
-#                                             "max": value,
-#                                             "trim": value
-#                                         }
-#                                     else:
-#                                         cal_data = radio_calibration_status["calibration_data"][chan_num]
-#                                         cal_data["min"] = min(cal_data["min"], value)
-#                                         cal_data["max"] = max(cal_data["max"], value)
-#                                         if radio_calibration_status["saving_parameters"]:
-#                                             cal_data["trim"] = value
-
-#                     elif msg_type == 'PARAM_VALUE':
-#                         param_id = msg.param_id.decode('utf-8') if isinstance(msg.param_id, bytes) else msg.param_id
-#                         parameters[param_id] = msg.param_value
-                        
-#                         if radio_calibration_status["saving_parameters"]:
-#                             if param_id.startswith('RC') and ('MIN' in param_id or 'MAX' in param_id or 'TRIM' in param_id):
-#                                 logger.info(f"Parameter {param_id} saved successfully")
-#             except Exception as e:
-#                 logger.error(f"Message handling error: {e}")
-#         await asyncio.sleep(0.01)
-
-
 
 
 
@@ -1567,56 +1301,6 @@ async def set_position():
 
 
 
-
-
-#Compass Calibration
-# def update_calibration_data(msg):
-#     global calibration_data
-#     msg_type = msg.get_type()
-    
-#     if msg_type == "MAG_CAL_PROGRESS":
-#         compass_id = msg.compass_id
-#         for compass in calibration_data["compasses"]:
-#             if compass["id"] == compass_id:
-#                 compass["progress"] = msg.completion_pct
-#                 logger.debug(f"MAG_CAL_PROGRESS: Compass {compass_id} progress: {msg.completion_pct}%")
-#                 break
-#     elif msg_type == "MAG_CAL_REPORT":
-#         compass_id = msg.compass_id
-#         for compass in calibration_data["compasses"]:
-#             if compass["id"] == compass_id:
-#                 compass["report"] = {
-#                     "compass_id": msg.compass_id,
-#                     "cal_status": msg.cal_status,
-#                     "autosaved": msg.autosaved,
-#                     "fitness": msg.fitness,
-#                     "ofs_x": msg.ofs_x,
-#                     "ofs_y": msg.ofs_y,
-#                     "ofs_z": msg.ofs_z,
-#                 }
-#                 compass["calibrated"] = msg.cal_status == mavutil.mavlink.MAG_CAL_SUCCESS
-#                 logger.info(f"MAG_CAL_REPORT: Compass {compass_id} calibration status: {msg.cal_status}")
-#                 break
-#     elif msg_type == "STATUSTEXT":
-#         calibration_data["status_text"] = msg.text
-#         logger.info(f"STATUSTEXT: {msg.text}")
-#     elif msg_type == "HEARTBEAT":
-#         calibration_data["heartbeat"] = "Connected"
-
-# async def update_data_continuously():
-#     global connection
-#     while True:
-#         if connection:
-#             try:
-#                 msg = connection.recv_msg()
-#                 if msg:
-#                     await update_calibration_data(msg)
-#             except Exception as e:
-#                 logger.error(f"Error receiving message: {e}")
-#         else:
-#             logger.warning("No active connection to drone")
-#         await asyncio.sleep(0.1) 
-
 @app.route('/start_calibration', methods=['POST'])
 async def start_calibration():
     try:
@@ -1684,39 +1368,6 @@ async def reboot_drone():
 async def calibration_status():
     return jsonify(calibration_data)
 
-
-
-
-
-#Accel calibration 
-# def update_calibration_status(command, result):
-#     global accel_calibration_status
-#     cmd_name = MAV_CMD_MAP.get(command, str(command))
-#     result_name = MAV_RESULT_MAP.get(result, str(result))
-    
-#     accel_calibration_status["last_command_result"] = f"{cmd_name}: {result_name}"
-    
-#     if command == mavutil.mavlink.MAV_CMD_PREFLIGHT_CALIBRATION:
-#         if result == mavutil.mavlink.MAV_RESULT_ACCEPTED:
-#             accel_calibration_status["completed"] = True
-#             accel_calibration_status["in_progress"] = False
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration completed successfully"
-#         elif result == mavutil.mavlink.MAV_RESULT_TEMPORARILY_REJECTED:
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration temporarily rejected"
-#         elif result == mavutil.mavlink.MAV_RESULT_DENIED:
-#             accel_calibration_status["completed"] = False
-#             accel_calibration_status["in_progress"] = False
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration denied"
-#         elif result == mavutil.mavlink.MAV_RESULT_UNSUPPORTED:
-#             accel_calibration_status["completed"] = False
-#             accel_calibration_status["in_progress"] = False
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration unsupported"
-#         elif result == mavutil.mavlink.MAV_RESULT_FAILED:
-#             accel_calibration_status["completed"] = False
-#             accel_calibration_status["in_progress"] = False
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration failed"
-#         elif result == mavutil.mavlink.MAV_RESULT_IN_PROGRESS:
-#             accel_calibration_status["message"] = f"{accel_calibration_status['type'].capitalize()} calibration in progress"
 
 
 def update_calibration_status(command, result):
@@ -1936,7 +1587,6 @@ async def main():
 
     config = Config()
     config.bind = ["127.0.0.1:5001"]
-    # config.cors_allow_origins = ["http://localhost:3001", "http://127.0.0.1:3001"] #from radio calibration
     await serve(app, config)
 
 
