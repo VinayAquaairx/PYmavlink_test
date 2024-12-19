@@ -293,7 +293,7 @@ async def detect_compasses():
     else:
         logger.info(f"Detected compasses: {calibration_data['compasses']}")
 
-async def connect_to_drone(connection_string, baudrate=115200):
+async def connect_to_drone(connection_string, baudrate=57600):
     global connection, mav, global_device, global_baudrate, global_protocol, last_heartbeat_time
     try:
         connection = mavutil.mavlink_connection(connection_string, baud=baudrate)
@@ -315,7 +315,7 @@ async def connect_drone():
     
     if protocol == "serial":
         device = data.get("port")
-        baudrate = data.get("baudrate", 115200)
+        baudrate = data.get("baudrate", 57600)
     elif protocol in ["udp", "tcp"]:
         ip = data.get("ip")
         port = data.get("port")
